@@ -10,6 +10,7 @@ import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
 import { findPatterns } from '../utils/patternMatcher';
 import { Plus, X } from 'lucide-react';
+import JSZip from 'jszip';
 
 interface Tab {
   id: string;
@@ -77,25 +78,54 @@ const LogAnalyzer = () => {
 
     try {
       const newFiles: LogFile[] = [];
+
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
-        const text = await file.text();
-        const lines = text.split('\n');
-        const parsedLogs = lines
-          .map((line, index) => {
-            const log = parseLogLine(line);
-            if (!log) {
-              console.warn(`Failed to parse line ${index} in ${file.name}:`, line);
-            }
-            return log;
-          })
-          .filter((log): log is LogEntryType => log !== null);
+        const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
-        newFiles.push({
-          id: crypto.randomUUID(),
-          name: file.name,
-          logs: parsedLogs,
-        });
+        if (fileExtension === 'zip') {
+          // Handle .zip files
+          const zip = new JSZip();
+          const zipContents = await zip.loadAsync(file);
+          for (const filename in zipContents.files) {
+            const fileData = await zipContents.files[filename].async('string');
+            const lines = fileData.split('\n');
+            const parsedLogs = lines
+              .map((line, index) => {
+                const log = parseLogLine(line);
+                if (!log) {
+                  console.warn(`Failed to parse line ${index} in ${filename}:`, line);
+                }
+                return log;
+              })
+              .filter((log): log is LogEntryType => log !== null);
+
+            newFiles.push({
+              id: crypto.randomUUID(),
+              name: filename,
+              logs: parsedLogs,
+            });
+          }
+        } else {
+          // Handle normal files
+          const text = await file.text();
+          const lines = text.split('\n');
+          const parsedLogs = lines
+            .map((line, index) => {
+              const log = parseLogLine(line);
+              if (!log) {
+                console.warn(`Failed to parse line ${index} in ${file.name}:`, line);
+              }
+              return log;
+            })
+            .filter((log): log is LogEntryType => log !== null);
+
+          newFiles.push({
+            id: crypto.randomUUID(),
+            name: file.name,
+            logs: parsedLogs,
+          });
+        }
       }
 
       setTabs((prev) =>

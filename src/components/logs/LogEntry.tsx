@@ -1,5 +1,6 @@
 import * as lucideReact from 'lucide-react';
 import * as logParser from '@/utils/logParser';
+import { tooltipMappings } from '@/utils/tooltipMappings'; // Import tooltip mappings
 
 interface LogEntryProps {
   log: logParser.LogEntry;
@@ -35,20 +36,33 @@ export const LogEntry = ({ log }: LogEntryProps) => {
         return JSON.stringify(parsed, null, 2);
       }
     } catch {
-      console.log("No JSON conversion - Test")
+      console.log("No JSON conversion - Test");
     }
     return message;
   };
+
+  // Check if the log message matches any tooltip pattern
+  const tooltip = Object.keys(tooltipMappings).find((pattern) =>
+    log.message.includes(pattern)
+  );
 
   return (
     <div className={`p-4 rounded-lg ${getBgColor()}`}>
       <div className="flex items-start gap-2">
         {getIcon()}
-        <div className="flex-1 overflow-x-auto">
-          <div className="font-mono text-sm whitespace-pre-wrap min-w-fit">
-            {formatMessage(log.message)}
-          </div>
+        <div className="flex-1 font-mono text-sm whitespace-pre-wrap">
+          {log.message}
         </div>
+        {tooltip && (
+          <div className="relative group">
+            <div className="flex items-center justify-center w-5 h-5 bg-blue-100 text-blue-700 rounded-full cursor-pointer">
+              ℹ
+            </div>
+            <div className="absolute left-0 top-full mt-1 hidden group-hover:block bg-black text-white text-xs p-2 rounded shadow-lg z-10 inline-block max-w-xs whitespace-nowrap">
+              {tooltipMappings[tooltip]}
+            </div>
+          </div>
+        )}
       </div>
       <div className="mt-2 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-2">
