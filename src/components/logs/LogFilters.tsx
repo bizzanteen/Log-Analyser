@@ -1,4 +1,4 @@
-import { Search, Info, AlertTriangle, AlertCircle, ArrowUpDown } from 'lucide-react';
+import { Search, Globe, AlertTriangle, AlertCircle, ArrowUpDown, Info } from 'lucide-react';
 import { LogEntry } from '@/utils/logParser';
 
 interface LogFiltersProps {
@@ -45,7 +45,7 @@ export const LogFilters = ({
           onClick={() => setFilter('all')}
           className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'all' ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-800 text-green-700 dark:text-green-300'}`}
         >
-          All
+          <Globe className="w-4 h-4" /> All
         </button>
         <button
           onClick={() => setFilter('info')}
