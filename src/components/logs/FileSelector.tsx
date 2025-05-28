@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { LogFile } from '@/utils/logParser';
 
 interface FileSelectorProps {
@@ -14,9 +14,11 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
   onFileSelect,
   removeFile,
 }) => {
+  const memoizedFiles = useMemo(() => files, [files]);
+
   return (
     <div className="flex flex-wrap gap-2">
-      {files.map((file) => (
+      {memoizedFiles.map((file) => (
         <div
           key={file.id}
           className={`flex items-center gap-2 px-3 py-1 rounded-full cursor-pointer border mb-2 ${
