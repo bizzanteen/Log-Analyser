@@ -64,7 +64,7 @@ export const LogEntry = ({ log }: LogEntryProps) => {
           </div>
         )}
       </div>
-      <div className="mt-2 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
+      <div className="mt-2 text-xs text-gray-500 dark:text-gray-300 flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <lucideReact.Clock className="w-3 h-3" />
           <span>{new Date(log.timestamp).toLocaleString()}</span>
