@@ -25,8 +25,18 @@ interface Tab {
 }
 
 const LogAnalyzer = () => {
-  const [tabs, setTabs] = useState<Tab[]>([]); // List of tabs
-  const [activeTabId, setActiveTabId] = useState<string | null>(null); // ID of the currently active tab
+  const [tabs, setTabs] = useState<Tab[]>([{
+    id: crypto.randomUUID(),
+    name: 'Tab 1', // Default tab name updated to 'Tab 1'
+    files: [],
+    selectedFileId: null,
+    filter: 'all',
+    searchTerm: '',
+    sortDirection: 'desc',
+    viewMode: 'logs',
+  }]); // Initialize with one default tab
+
+  const [activeTabId, setActiveTabId] = useState<string | null>(tabs[0].id); // Set the first tab as active
   const [editingTabId, setEditingTabId] = useState<string | null>(null); // ID of the tab being renamed
   const [tempTabName, setTempTabName] = useState<string>(''); // Temporary name for the tab being edited
 
