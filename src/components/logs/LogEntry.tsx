@@ -21,11 +21,11 @@ export const LogEntry = ({ log }: LogEntryProps) => {
   const getBgColor = () => {
     switch (log.level) {
       case 'error':
-        return 'bg-red-50';
+        return 'bg-red-50 dark:bg-red-900';
       case 'warn':
-        return 'bg-yellow-50';
+        return 'bg-yellow-50 dark:bg-yellow-900';
       default:
-        return 'bg-gray-50';
+        return 'bg-gray-50 dark:bg-gray-800';
     }
   };
 

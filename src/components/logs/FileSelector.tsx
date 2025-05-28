@@ -19,10 +19,10 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
       {files.map((file) => (
         <div
           key={file.id}
-          className={`flex items-center gap-2 px-3 py-1 rounded-full cursor-pointer border ${
+          className={`flex items-center gap-2 px-3 py-1 rounded-full cursor-pointer border bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200${
             selectedFileId === file.id
-              ? 'bg-blue-100 border-blue-500 text-blue-700'
-              : 'bg-gray-100 border-gray-300 text-gray-700'
+              ? ' bg-blue-100 dark:bg-[#1d4ed8] border-blue-500 dark:border-blue-400 text-blue-700 dark:text-blue-200 mb-2' // add margin-bottom for selected
+              : ' mb-2' // add margin-bottom for unselected
           }`}
           onClick={() => onFileSelect(file.id)}
         >

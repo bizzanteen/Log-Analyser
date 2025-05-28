@@ -32,7 +32,7 @@ export const PatternView = ({ patterns }: PatternViewProps) => {
           <div key={group.pattern} className="border rounded-lg">
             <button
               onClick={() => togglePattern(group.pattern)}
-              className="w-full px-4 py-2 flex items-center gap-2 hover:bg-gray-50"
+              className="w-full px-4 py-2 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800"
             >
               {expandedPatterns.has(group.pattern) ? (
                 <ChevronDown className="w-4 h-4" />

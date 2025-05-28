@@ -11,6 +11,7 @@ import { PatternView } from './logs/PatternView';
 import { findPatterns } from '../utils/patternMatcher';
 import { Plus, X } from 'lucide-react';
 import JSZip from 'jszip';
+import { ThemeToggle } from "./theme-toggle";
 
 interface Tab {
   id: string;
@@ -178,21 +179,20 @@ const LogAnalyzer = () => {
               <span>Log Analyzer</span>
               <button
                 onClick={addTab}
-                className="ml-auto px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                className="ml-auto px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-[#1d4ed8] dark:hover:bg-[#1d4ed8]"
               >
                 <Plus className="w-4 h-4" />
               </button>
+              <ThemeToggle />
             </CardTitle>
           </CardHeader>
           <CardContent>
             {/* Tab Navigation */}
-            <div className="flex items-center gap-2 border-b pb-2">
+            <div className="flex items-center gap-2 border-b">
               {tabs.map((tab) => (
                 <div
                   key={tab.id}
-                  className={`px-4 py-2 rounded-t cursor-pointer ${
-                    activeTabId === tab.id ? 'bg-blue-500 text-white' : 'bg-gray-100'
-                  }`}
+                  className={`px-4 py-2 rounded-t cursor-pointer ${activeTabId === tab.id ? 'bg-blue-500 text-white dark:bg-[#1d4ed8]' : 'bg-gray-100 dark:bg-gray-800'}`}
                   onClick={() => setActiveTabId(tab.id)}
                 >
                   <div className="flex items-center gap-2">
@@ -258,7 +258,7 @@ const LogAnalyzer = () => {
                     type="file"
                     onChange={handleFileUpload}
                     multiple
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                    className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-blue-900 file:text-blue-700 dark:file:text-blue-200 hover:file:bg-blue-100 dark:hover:file:bg-blue-800 mt-4"
                   />
                 </div>
 
