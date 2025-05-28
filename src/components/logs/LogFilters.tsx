@@ -43,7 +43,7 @@ export const LogFilters = ({
         <div className="w-px h-6 bg-gray-300 mx-2" />
         <button
           onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'all' ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'}`}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'all' ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-800 text-green-700 dark:text-green-300'}`}
         >
           All
         </button>
