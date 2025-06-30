@@ -12,6 +12,8 @@ import { findPatterns } from '../utils/patternMatcher';
 import { Plus, X } from 'lucide-react';
 import JSZip from 'jszip';
 import { ThemeToggle } from "./theme-toggle";
+import axios from 'axios';
+import { Modal } from '../components/ui/modal';
 
 interface Tab {
   id: string;
@@ -20,8 +22,13 @@ interface Tab {
   selectedFileId: string | null;
   filter: string;
   searchTerm: string;
+  searchTerms: string[]; // Array of search terms for tag display
+  searchScope: 'current' | 'all'; // New property for search scope
+  dateRange: { start: string; end: string }; // Date filter range
   sortDirection: 'asc' | 'desc';
   viewMode: 'logs' | 'patterns';
+  showConversationButton?: boolean; // Added optional property for button visibility
+  response?: string | string[]; // Added optional property for storing response
 }
 
 const LogAnalyzer = () => {
@@ -32,6 +39,9 @@ const LogAnalyzer = () => {
     selectedFileId: null,
     filter: 'all',
     searchTerm: '',
+    searchTerms: [], // Initialize as empty array
+    searchScope: 'current', // Default search scope
+    dateRange: { start: '', end: '' }, // Initialize date range
     sortDirection: 'desc',
     viewMode: 'logs',
   }]); // Ensure at least one tab is always initialized
@@ -41,6 +51,8 @@ const LogAnalyzer = () => {
   const [tempTabName, setTempTabName] = useState<string>(''); // Temporary name for the tab being edited
   const [currentPage, setCurrentPage] = useState(1); // Track the current page
   const logsPerPage = 800; // Maximum logs per page
+  const [modalContent, setModalContent] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Add a new tab
   const addTab = () => {
@@ -51,6 +63,9 @@ const LogAnalyzer = () => {
       selectedFileId: null,
       filter: 'all',
       searchTerm: '',
+      searchTerms: [], // Initialize as empty array
+      searchScope: 'current', // Default search scope
+      dateRange: { start: '', end: '' }, // Initialize date range
       sortDirection: 'desc',
       viewMode: 'logs',
     };
@@ -67,19 +82,72 @@ const LogAnalyzer = () => {
   };
 
   // Start renaming a tab
-  const startRenamingTab = (id: string, currentName: string) => {
+  const startRenamingTab = (id: string) => {
     setEditingTabId(id);
-    setTempTabName(currentName); // Set the current name as the temporary name
+    setTempTabName(''); // Clear the temporary name to always show the placeholder
   };
 
   // Save the renamed tab
-  const saveRenamedTab = () => {
+  const saveRenamedTab = async () => {
     if (editingTabId) {
+      const currentEditingTabId = editingTabId;
+      if (tempTabName.trim() === '') {
+        // Restore the original name if no changes were made
+        const originalName = tabs.find((tab) => tab.id === currentEditingTabId)?.name || '';
+        setTabs((prev) =>
+          prev.map((tab) => (tab.id === currentEditingTabId ? { ...tab, name: originalName } : tab))
+        );
+        setEditingTabId(null);
+        setTempTabName('');
+        return;
+      }
+      // Always update the tab name and clear previous response/button
       setTabs((prev) =>
-        prev.map((tab) => (tab.id === editingTabId ? { ...tab, name: tempTabName } : tab))
+        prev.map((tab) =>
+          tab.id === currentEditingTabId
+            ? { ...tab, name: tempTabName, showConversationButton: false, response: undefined }
+            : tab
+        )
       );
-      setEditingTabId(null); // Exit editing mode
-      setTempTabName(''); // Clear the temporary name
+      setEditingTabId(null);
+      setTempTabName('');
+      // Run the HTTP request for the new ticket number
+      try {
+        const response = await axios.get(
+          `https://rabid-force-polish.flows.pstmn.io/api/default/get-summary?ticketNumber=${tempTabName}`,
+          {
+            headers: {
+              Authorization:
+                'Basic ZWFtb24uY3VsbGVuK2QzdkBwb3N0bWFuLmNvbS90b2tlbjplZXdVQ2loemV6UjYya0lzMXNUaFhBbFQybnpKWGhPbThHT3JzNG1j',
+            },
+          }
+        );
+        if (response.data && (Array.isArray(response.data) || typeof response.data === 'string')) {
+          setTabs((prevTabs) =>
+            prevTabs.map((tab) =>
+              tab.id === currentEditingTabId
+                ? { ...tab, showConversationButton: true, response: response.data }
+                : tab
+            )
+          );
+        } else {
+          setTabs((prevTabs) =>
+            prevTabs.map((tab) =>
+              tab.id === currentEditingTabId
+                ? { ...tab, showConversationButton: false, response: undefined }
+                : tab
+            )
+          );
+        }
+      } catch {
+        setTabs((prevTabs) =>
+          prevTabs.map((tab) =>
+            tab.id === currentEditingTabId
+              ? { ...tab, showConversationButton: false, response: undefined }
+              : tab
+          )
+        );
+      }
     }
   };
 
@@ -160,19 +228,39 @@ const LogAnalyzer = () => {
   // Get the active tab
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
-  // Get the selected file and logs for the active tab
-  const selectedFile = activeTab?.files.find((file) => file.id === activeTab?.selectedFileId);
-  const currentLogs = selectedFile?.logs || [];
+  // Get logs based on search scope (current file or all files)
+  const currentLogs = activeTab?.searchScope === 'all' 
+    ? activeTab.files.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
+    : (activeTab?.files.find((file) => file.id === activeTab?.selectedFileId)?.logs || []);
 
   // Filter and sort the logs based on the active tab's state
   const filteredAndSortedLogs = currentLogs
     .filter((log) => {
       const levelMatch = activeTab?.filter === 'all' || log.level === activeTab?.filter;
-      const searchMatch =
-        !activeTab?.searchTerm ||
-        log.message.toLowerCase().includes(activeTab.searchTerm.toLowerCase()) ||
-        log.context.toLowerCase().includes(activeTab.searchTerm.toLowerCase());
-      return levelMatch && searchMatch;
+      
+      // Handle multi-term OR search
+      const searchTerms = activeTab?.searchTerms || [];
+      const searchMatch = searchTerms.length === 0 || searchTerms.some(term =>
+        log.message.toLowerCase().includes(term.toLowerCase()) ||
+        log.context.toLowerCase().includes(term.toLowerCase())
+      );
+      
+      // Handle date range filtering
+      const dateRange = activeTab?.dateRange;
+      let dateMatch = true;
+      if (dateRange && (dateRange.start || dateRange.end)) {
+        const logDate = new Date(log.timestamp);
+        const logDateString = logDate.toISOString().split('T')[0]; // Get YYYY-MM-DD format
+        
+        if (dateRange.start && logDateString < dateRange.start) {
+          dateMatch = false;
+        }
+        if (dateRange.end && logDateString > dateRange.end) {
+          dateMatch = false;
+        }
+      }
+      
+      return levelMatch && searchMatch && dateMatch;
     })
     .sort((a, b) => {
       const sortMultiplier = activeTab?.sortDirection === 'asc' ? 1 : -1;
@@ -197,198 +285,270 @@ const LogAnalyzer = () => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <>
       <div className="max-w-6xl mx-auto">
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <span>Log Analyzer</span>
-              <button
-                onClick={addTab}
-                className="ml-auto px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-gray-700 dark:hover:bg-gray-600"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-              <ThemeToggle />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {/* Tab Navigation */}
-            <div className="flex overflow-x-auto gap-2 border-b border-gray-300 dark:border-gray-700">
-              {tabs.map((tab) => (
-                <div
-                  key={tab.id}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
-                    activeTabId === tab.id
-                      ? 'bg-white dark:bg-gray-900 text-black dark:text-white border border-gray-300 dark:border-gray-700'
-                      : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                  }`}
-                  onClick={() => setActiveTabId(tab.id)}
+        <div className="max-w-6xl mx-auto">
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <span>Log Analyzer</span>
+                <button
+                  onClick={addTab}
+                  className="ml-auto px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-gray-700 dark:hover:bg-gray-600"
                 >
-                  <div className="flex items-center gap-1">
-                    {editingTabId === tab.id ? (
-                      <input
-                        type="text"
-                        value={tempTabName}
-                        onChange={(e) => setTempTabName(e.target.value)}
-                        onBlur={saveRenamedTab}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveRenamedTab();
-                        }}
-                        className="px-2 py-1 rounded border border-gray-300 text-black"
-                        autoFocus
-                      />
-                    ) : (
-                      <div className="flex items-center gap-1">
-                        <span className="truncate">{tab.name}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startRenamingTab(tab.id, tab.name);
+                  <Plus className="w-4 h-4" />
+                </button>
+                <ThemeToggle />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {/* Tab Navigation */}
+              <div className="flex overflow-x-auto gap-2 border-b border-gray-300 dark:border-gray-700">
+                {tabs.map((tab) => (
+                  <div
+                    key={tab.id}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
+                      activeTabId === tab.id
+                        ? 'bg-white dark:bg-gray-900 text-black dark:text-white border border-gray-300 dark:border-gray-700'
+                        : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                    }`}
+                    onClick={() => setActiveTabId(tab.id)}
+                  >
+                    <div className="flex items-center gap-1">
+                      {editingTabId === tab.id ? (
+                        <input
+                          type="text"
+                          value={tempTabName}
+                          onChange={(e) => {
+                            const numericValue = e.target.value.replace(/[^0-9]/g, ''); // Remove non-numeric characters
+                            setTempTabName(numericValue);
                           }}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+                          onBlur={saveRenamedTab}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveRenamedTab();
+                          }}
+                          placeholder="Enter ticket number"
+                          className="px-2 py-1 rounded border border-gray-300 text-black dark:text-white italic"
+                          autoFocus
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="truncate">{tab.name}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRenamingTab(tab.id); // Updated to match the new function signature
+                            }}
+                            className="text-gray-400 hover:text-gray-600"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15.232 5.232l3.536 3.536M9 11l3.536-3.536m0 0L15.232 5.232m-3.536 3.536L5.232 15.232m0 0L3 21l5.768-2.232m0 0L15.232 9.768"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeTab(tab.id);
-                      }}
-                      className="text-red-500 hover:text-red-700"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Tab Content */}
-            {activeTab ? (
-              <div>
-                {/* File Upload */}
-                <div className="mb-4 flex justify-between items-center">
-                  <input
-                    type="file"
-                    onChange={handleFileUpload}
-                    multiple
-                    className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-gray-700 file:text-blue-700 dark:file:text-gray-300 hover:file:bg-blue-100 dark:hover:file:bg-gray-600 mt-4"
-                  />
-                </div>
-
-                {/* File Selector */}
-                {activeTab.files.length > 0 && (
-                  <FileSelector
-                    files={activeTab.files}
-                    selectedFileId={activeTab.selectedFileId}
-                    onFileSelect={(id) =>
-                      setTabs((prev) =>
-                        prev.map((tab) =>
-                          tab.id === activeTabId ? { ...tab, selectedFileId: id } : tab
-                        )
-                      )
-                    }
-                    removeFile={(fileId) =>
-                      setTabs((prev) =>
-                        prev.map((tab) =>
-                          tab.id === activeTabId
-                            ? {
-                                ...tab,
-                                files: tab.files.filter((file) => file.id !== fileId),
-                                selectedFileId:
-                                  tab.selectedFileId === fileId ? null : tab.selectedFileId,
-                              }
-                            : tab
-                        )
-                      )
-                    }
-                  />
-                )}
-
-                {/* Filters */}
-                <LogFilters
-                  filter={activeTab.filter}
-                  setFilter={(filter) =>
-                    setTabs((prev) =>
-                      prev.map((tab) =>
-                        tab.id === activeTabId ? { ...tab, filter } : tab
-                      )
-                    )
-                  }
-                  searchTerm={activeTab.searchTerm}
-                  setSearchTerm={(searchTerm) =>
-                    setTabs((prev) =>
-                      prev.map((tab) =>
-                        tab.id === activeTabId ? { ...tab, searchTerm } : tab
-                      )
-                    )
-                  }
-                  sortDirection={activeTab.sortDirection}
-                  setSortDirection={(sortDirection) =>
-                    setTabs((prev) =>
-                      prev.map((tab) =>
-                        tab.id === activeTabId ? { ...tab, sortDirection } : tab
-                      )
-                    )
-                  }
-                />
-
-                {/* Statistics */}
-                <LogStats stats={stats} />
-
-                {/* Log View or Pattern View */}
-                {activeTab.viewMode === 'logs' ? (
-                  <div className="space-y-2 mt-4">
-                    {paginatedLogs.map((log, index) => (
-                      <LogEntry key={index} log={log} />
-                    ))}
-                  </div>
-                ) : (
-                  <PatternView patterns={findPatterns(filteredAndSortedLogs)} />
-                )}
-
-                {/* Pagination Controls */}
-                {totalPages > 1 && (
-                  <div className="flex justify-center mt-4">
-                    {Array.from({ length: totalPages }, (_, index) => (
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              className="h-4 w-4"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15.232 5.232l3.536 3.536M9 11l3.536-3.536m0 0L15.232 5.232m-3.536 3.536L5.232 15.232m0 0L3 21l5.768-2.232m0 0L15.232 9.768"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
                       <button
-                        key={index}
-                        onClick={() => handlePageChange(index + 1)}
-                        className={`px-3 py-1 mx-1 rounded ${
-                          currentPage === index + 1
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-200 text-gray-700'
-                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeTab(tab.id);
+                        }}
+                        className="text-red-500 hover:text-red-700"
                       >
-                        {index + 1}
+                        <X className="w-4 h-4" />
                       </button>
-                    ))}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            ) : (
-              <div className="text-gray-500">No tabs open. Add a new tab to get started.</div>
-            )}
-          </CardContent>
-        </Card>
+
+              {/* Tab Content */}
+              {activeTab ? (
+                <div>
+                  {/* File Upload */}
+                  <div className="mb-4 flex justify-between items-center">
+                    <input
+                      type="file"
+                      onChange={handleFileUpload}
+                      multiple
+                      className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-gray-700 file:text-blue-700 dark:file:text-gray-300 hover:file:bg-blue-100 dark:hover:file:bg-gray-600 mt-4"
+                    />
+                    <div className="flex items-center gap-4">
+                      {/* Conditional rendering for 'Show Conversation' button */}
+                      {activeTab && activeTab.showConversationButton && (
+                        <button
+                          onClick={() => setIsModalOpen(true)}
+                          className="px-4 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 text-center whitespace-nowrap"
+                        >
+                          Show Conversation
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* File Selector */}
+                  {activeTab.files.length > 0 && (
+                    <FileSelector
+                      files={activeTab.files}
+                      selectedFileId={activeTab.selectedFileId}
+                      onFileSelect={(id) =>
+                        setTabs((prev) =>
+                          prev.map((tab) =>
+                            tab.id === activeTabId ? { ...tab, selectedFileId: id } : tab
+                          )
+                        )
+                      }
+                      removeFile={(fileId) =>
+                        setTabs((prev) =>
+                          prev.map((tab) =>
+                            tab.id === activeTabId
+                              ? {
+                                  ...tab,
+                                  files: tab.files.filter((file) => file.id !== fileId),
+                                  selectedFileId:
+                                    tab.selectedFileId === fileId ? null : tab.selectedFileId,
+                                }
+                              : tab
+                          )
+                        )
+                      }
+                    />
+                  )}
+
+                  {/* Filters */}
+                  <LogFilters
+                    filter={activeTab.filter}
+                    setFilter={(filter) =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, filter } : tab
+                        )
+                      )
+                    }
+                    searchTerm={activeTab.searchTerm}
+                    setSearchTerm={(searchTerm) =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, searchTerm } : tab
+                        )
+                      )
+                    }
+                    searchTerms={activeTab.searchTerms}
+                    setSearchTerms={(searchTerms) =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, searchTerms } : tab
+                        )
+                      )
+                    }
+                    searchScope={activeTab.searchScope}
+                    setSearchScope={(searchScope: 'current' | 'all') =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, searchScope } : tab
+                        )
+                      )
+                    }
+                    sortDirection={activeTab.sortDirection}
+                    setSortDirection={(sortDirection) =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, sortDirection } : tab
+                        )
+                      )
+                    }
+                    dateRange={activeTab.dateRange}
+                    setDateRange={(dateRange) =>
+                      setTabs((prev) =>
+                        prev.map((tab) =>
+                          tab.id === activeTabId ? { ...tab, dateRange } : tab
+                        )
+                      )
+                    }
+                  />
+
+                  {/* Statistics */}
+                  <LogStats stats={stats} />
+
+                  {/* Log View or Pattern View */}
+                  {activeTab.viewMode === 'logs' ? (
+                    <div className="space-y-2 mt-4">
+                      {paginatedLogs.map((log, index) => (
+                        <LogEntry 
+                          key={index} 
+                          log={log} 
+                          conversation={
+                            typeof activeTab.response === 'string' 
+                              ? activeTab.response 
+                              : Array.isArray(activeTab.response) 
+                                ? activeTab.response.join('\n') 
+                                : ''
+                          }
+                          showFileName={activeTab.searchScope === 'all'}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <PatternView patterns={findPatterns(filteredAndSortedLogs)} />
+                  )}
+
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="flex justify-center mt-4">
+                      {Array.from({ length: totalPages }, (_, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handlePageChange(index + 1)}
+                          className={`px-3 py-1 mx-1 rounded ${
+                            currentPage === index + 1
+                              ? 'bg-blue-500 text-white'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {index + 1}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-gray-500">No tabs open. Add a new tab to get started.</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+      {/* Updated modal content to handle JSON responses properly */}
+      {isModalOpen && activeTab && activeTab.response && (
+        <Modal onClose={() => setIsModalOpen(false)}>
+          <div className="p-4">
+            <div>
+              {Array.isArray(activeTab.response) ? (
+                activeTab.response.map((item, index) => (
+                  <p key={index} className="mb-2">{item}</p>
+                ))
+              ) : typeof activeTab.response === 'string' ? (
+                activeTab.response.split('\n').map((line, index) => (
+                  <p key={index} className="mb-2">{line}</p>
+                ))
+              ) : (
+                <p className="mb-2">Invalid response format</p>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 };
 

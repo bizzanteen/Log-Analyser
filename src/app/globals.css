@@ -79,3 +79,67 @@ body {
 html {
   overflow-y: scroll; /* Always show the vertical scrollbar */
 }
+
+.speech-bubble-custom {
+  position: relative;
+  display: inline-block;
+  background: var(--card);
+  color: var(--foreground);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  box-shadow: 0 4px 24px 0 rgba(0,0,0,0.10), 0 1.5px 4px 0 rgba(0,0,0,0.10);
+  z-index: 50;
+  max-width: 350px;
+  min-width: 120px;
+  font-size: 0.95rem;
+  margin-top: 0.25rem;
+}
+.speech-bubble-custom::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 18px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 18px solid var(--card);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
+}
+.dark .speech-bubble-custom {
+  background: #23272f;
+  color: #fff;
+}
+.dark .speech-bubble-custom::before {
+  border-right-color: #23272f;
+}
+.speech-bubble-modal {
+  position: relative;
+  z-index: 100000;
+  box-shadow: 0 4px 24px 0 rgba(0,0,0,0.10), 0 1.5px 4px 0 rgba(0,0,0,0.10);
+  background: #fff !important;
+  color: var(--foreground);
+  border-radius: 0.75rem;
+  opacity: 1;
+}
+.speech-bubble-modal-arrow {
+  position: absolute;
+  left: -18px;
+  top: 18px;
+  width: 0;
+  height: 0;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 18px solid #fff !important;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
+  content: '';
+  display: block;
+}
+.dark .speech-bubble-modal {
+  background: #23272f !important;
+  color: #fff;
+  opacity: 1;
+}
+.dark .speech-bubble-modal-arrow {
+  border-right-color: #23272f !important;
+}
