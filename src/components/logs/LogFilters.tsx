@@ -1,6 +1,6 @@
 import { Search, Globe, AlertTriangle, AlertCircle, ArrowUpDown, Info, X, File, Files, Calendar } from 'lucide-react';
 import { LogEntry } from '@/utils/logParser';
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 
 interface LogFiltersProps {
   filter: string;
@@ -32,26 +32,25 @@ export const LogFilters = ({
   setDateRange
 }: LogFiltersProps) => {
   const [tempSearchInput, setTempSearchInput] = useState('');
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const datePickerRef = useRef<HTMLDivElement>(null);
-
-  // Close date picker when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
-        setShowDatePicker(false);
-      }
-    };
-
-    if (showDatePicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [showDatePicker]);
 
   const handleSearchInputChange = (value: string) => {
     setTempSearchInput(value);
     setSearchTerm(value);
+  };
+
+  const handleStartDateChange = (value: string) => {
+    const newDateRange = { ...(dateRange || { start: '', end: '' }), start: value };
+    
+    // If the new start date is after the current end date, clear the end date
+    if (dateRange?.end && value && new Date(value) > new Date(dateRange.end)) {
+      newDateRange.end = '';
+    }
+    
+    setDateRange(newDateRange);
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setDateRange({ ...(dateRange || { start: '', end: '' }), end: value });
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
@@ -124,21 +123,24 @@ export const LogFilters = ({
         <Calendar className="w-4 h-4 text-gray-500" />
         <div className="flex items-center gap-2 flex-1">
           <input
-            type="text"
-            value={dateRange?.start ? new Date(dateRange.start).toLocaleDateString() : ''}
-            onClick={() => setShowDatePicker(true)}
-            className="px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm cursor-pointer"
-            placeholder="dd/mm/aaaa"
-            readOnly
+            type="date"
+            value={dateRange?.start || ''}
+            onChange={(e) => handleStartDateChange(e.target.value)}
+            className="px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm"
+            placeholder="Start date"
+            title="Select start date"
           />
           <span className="text-gray-500">to</span>
           <input
-            type="text"
-            value={dateRange?.end ? new Date(dateRange.end).toLocaleDateString() : ''}
-            onClick={() => setShowDatePicker(true)}
-            className="px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm cursor-pointer"
-            placeholder="dd/mm/aaaa"
-            readOnly
+            type="date"
+            value={dateRange?.end || ''}
+            min={dateRange?.start || ''}
+            onChange={(e) => handleEndDateChange(e.target.value)}
+            className={`px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm ${
+              dateRange?.start ? 'border-blue-300 dark:border-blue-600' : ''
+            }`}
+            placeholder="End date"
+            title={dateRange?.start ? `Select end date (must be after ${new Date(dateRange.start).toLocaleDateString()})` : "Select end date"}
           />
           {(dateRange?.start || dateRange?.end) && (
             <button
@@ -150,58 +152,6 @@ export const LogFilters = ({
             </button>
           )}
         </div>
-
-        {/* Calendar Dropdown */}
-        {showDatePicker && (
-          <div 
-            ref={datePickerRef}
-            className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-900 border rounded-lg shadow-lg z-50 p-4 min-w-[300px]"
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-semibold">Select Date Range</h3>
-              <button onClick={() => setShowDatePicker(false)} className="text-gray-500 hover:text-gray-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">Start Date</label>
-                <input
-                  type="date"
-                  value={dateRange?.start || ''}
-                  onChange={(e) => setDateRange({ ...(dateRange || { start: '', end: '' }), start: e.target.value })}
-                  className="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-400">End Date</label>
-                <input
-                  type="date"
-                  value={dateRange?.end || ''}
-                  onChange={(e) => setDateRange({ ...(dateRange || { start: '', end: '' }), end: e.target.value })}
-                  className="w-full px-3 py-2 border rounded bg-white dark:bg-gray-800 text-sm"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setShowDatePicker(false)}
-                  className="flex-1 px-3 py-1.5 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                >
-                  Apply
-                </button>
-                <button
-                  onClick={() => {
-                    clearDateRange();
-                    setShowDatePicker(false);
-                  }}
-                  className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Controls Row */}

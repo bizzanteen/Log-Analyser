@@ -50,7 +50,8 @@ const LogAnalyzer = () => {
   const [editingTabId, setEditingTabId] = useState<string | null>(null); // ID of the tab being renamed
   const [tempTabName, setTempTabName] = useState<string>(''); // Temporary name for the tab being edited
   const [currentPage, setCurrentPage] = useState(1); // Track the current page
-  const logsPerPage = 800; // Maximum logs per page
+  const [pageInput, setPageInput] = useState(''); // Input for jumping to specific page
+  const logsPerPage = 50; // Maximum logs per page
   const [modalContent, setModalContent] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -284,6 +285,36 @@ const LogAnalyzer = () => {
     setCurrentPage(page);
   };
 
+  // Calculate pagination range
+  const getPaginationRange = (current: number, total: number) => {
+    const maxVisible = 10;
+    const sidePages = Math.floor((maxVisible - 1) / 2);
+    
+    let start = Math.max(1, current - sidePages);
+    let end = Math.min(total, current + sidePages);
+    
+    // Adjust if we're near the beginning or end
+    if (end - start + 1 < maxVisible) {
+      if (start === 1) {
+        end = Math.min(total, start + maxVisible - 1);
+      } else if (end === total) {
+        start = Math.max(1, end - maxVisible + 1);
+      }
+    }
+    
+    return { start, end };
+  };
+
+  // Handle page input
+  const handlePageInputSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const page = parseInt(pageInput);
+    if (!isNaN(page) && page >= 1 && page <= totalPages) {
+      handlePageChange(page);
+      setPageInput('');
+    }
+  };
+
   return (
     <>
       <div className="max-w-6xl mx-auto">
@@ -504,20 +535,106 @@ const LogAnalyzer = () => {
 
                   {/* Pagination Controls */}
                   {totalPages > 1 && (
-                    <div className="flex justify-center mt-4">
-                      {Array.from({ length: totalPages }, (_, index) => (
+                    <div className="flex justify-center items-center gap-2 mt-4 flex-wrap">
+                      {/* First Page */}
+                      <button
+                        onClick={() => handlePageChange(1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ««
+                      </button>
+                      
+                      {/* Previous Page */}
+                      <button
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ‹
+                      </button>
+
+                      {/* Page Numbers */}
+                      {(() => {
+                        const { start, end } = getPaginationRange(currentPage, totalPages);
+                        const pages = [];
+                        
+                        // Show ellipsis if we're not starting from page 1
+                        if (start > 1) {
+                          pages.push(
+                            <span key="start-ellipsis" className="px-2 text-gray-500 dark:text-gray-400">...</span>
+                          );
+                        }
+                        
+                        // Show page numbers in range
+                        for (let i = start; i <= end; i++) {
+                          pages.push(
+                            <button
+                              key={i}
+                              onClick={() => handlePageChange(i)}
+                              className={`px-3 py-1 rounded ${
+                                currentPage === i
+                                  ? 'bg-blue-500 text-white dark:bg-blue-600'
+                                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                              }`}
+                            >
+                              {i}
+                            </button>
+                          );
+                        }
+                        
+                        // Show ellipsis if we're not ending at the last page
+                        if (end < totalPages) {
+                          pages.push(
+                            <span key="end-ellipsis" className="px-2 text-gray-500 dark:text-gray-400">...</span>
+                          );
+                        }
+                        
+                        return pages;
+                      })()}
+
+                      {/* Next Page */}
+                      <button
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ›
+                      </button>
+                      
+                      {/* Last Page */}
+                      <button
+                        onClick={() => handlePageChange(totalPages)}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        »»
+                      </button>
+
+                      {/* Page Jump Input */}
+                      <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1 ml-4">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Go to:</span>
+                        <input
+                          type="number"
+                          min="1"
+                          max={totalPages}
+                          value={pageInput}
+                          onChange={(e) => setPageInput(e.target.value)}
+                          className="w-16 px-2 py-1 border rounded text-sm bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100"
+                          placeholder={currentPage.toString()}
+                        />
                         <button
-                          key={index}
-                          onClick={() => handlePageChange(index + 1)}
-                          className={`px-3 py-1 mx-1 rounded ${
-                            currentPage === index + 1
-                              ? 'bg-blue-500 text-white'
-                              : 'bg-gray-200 text-gray-700'
-                          }`}
+                          type="submit"
+                          className="px-2 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
                         >
-                          {index + 1}
+                          Go
                         </button>
-                      ))}
+                      </form>
+                      
+                      {/* Page Info */}
+                      <span className="text-sm text-gray-600 dark:text-gray-400 ml-4">
+                        Page {currentPage} of {totalPages}
+                      </span>
                     </div>
                   )}
                 </div>
