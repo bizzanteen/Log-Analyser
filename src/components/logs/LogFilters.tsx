@@ -90,7 +90,7 @@ export const LogFilters = ({
       {/* Search Input with Tags */}
       <div className="flex items-center gap-2">
         <Search className="w-4 h-4 text-gray-500" />
-        <div className="flex-1 flex items-center gap-2 p-2 border rounded bg-white dark:bg-gray-900 min-h-[40px] flex-wrap">
+        <div className="flex-1 flex items-start gap-2 p-2 border rounded bg-white dark:bg-gray-900 min-h-[48px] flex-wrap">
           {/* Search Tags */}
           {searchTerms.map((term, index) => (
             <span
@@ -165,6 +165,8 @@ export const LogFilters = ({
           <ArrowUpDown className="w-4 h-4" />
           {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
         </button>
+
+
 
         {/* Search Scope Toggle */}
         <div className="flex rounded border bg-white dark:bg-gray-900">

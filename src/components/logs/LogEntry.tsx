@@ -13,6 +13,7 @@ interface LogEntryProps {
 export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryProps) => {
   const [bubble, setBubble] = useState<{ content: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const getIcon = () => {
     switch (log.level) {
@@ -48,9 +49,21 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
       });
       setBubble({ content: res.data });
     } catch (e) {
-      setBubble({ content: 'Error fetching response' });
+      setBubble({ content: 'Error occurred while fetching explanation' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const copyToClipboard = async () => {
+    const logText = `[${new Date(log.timestamp).toLocaleString()}] [${log.level.toUpperCase()}] [PID: ${log.pid}] [${log.context}]${showFileName && log.fileName ? ` [${log.fileName}]` : ''}\n${log.message}`;
+    
+    try {
+      await navigator.clipboard.writeText(logText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
     }
   };
 
@@ -88,6 +101,20 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
             </div>
           </div>
         )}
+        
+        {/* Copy Button */}
+        <button
+          onClick={copyToClipboard}
+          className="flex items-center justify-center w-7 h-7 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+          title="Copy log entry"
+        >
+          {copied ? (
+            <lucideReact.Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+          ) : (
+            <lucideReact.Copy className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+          )}
+        </button>
+        
         {loading && (
           <div className="ml-2 text-xs text-gray-400">Loading...</div>
         )}

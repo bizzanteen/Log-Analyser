@@ -9,7 +9,7 @@ import { LogStats } from './logs/LogStats';
 import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
 import { findPatterns } from '../utils/patternMatcher';
-import { Plus, X } from 'lucide-react';
+import { Plus, X, Copy, Check } from 'lucide-react';
 import JSZip from 'jszip';
 import { ThemeToggle } from "./theme-toggle";
 import axios from 'axios';
@@ -51,6 +51,7 @@ const LogAnalyzer = () => {
   const [tempTabName, setTempTabName] = useState<string>(''); // Temporary name for the tab being edited
   const [currentPage, setCurrentPage] = useState(1); // Track the current page
   const [pageInput, setPageInput] = useState(''); // Input for jumping to specific page
+  const [copyAllCopied, setCopyAllCopied] = useState(false); // State for copy button animation
   const logsPerPage = 50; // Maximum logs per page
   const [modalContent, setModalContent] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -315,6 +316,62 @@ const LogAnalyzer = () => {
     }
   };
 
+  // Copy all filtered logs to clipboard
+  const copyAllLogs = async () => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (!activeTab) return;
+
+    // Get the same filtered logs that are currently displayed
+    const currentLogs = activeTab?.searchScope === 'all' 
+      ? activeTab.files.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
+      : (activeTab?.files.find((file) => file.id === activeTab?.selectedFileId)?.logs || []);
+
+    const filteredLogs = currentLogs.filter((log) => {
+      const levelMatch = activeTab?.filter === 'all' || log.level === activeTab?.filter;
+      
+      // Handle multi-term OR search
+      const searchTerms = activeTab?.searchTerms || [];
+      const searchMatch = searchTerms.length === 0 || searchTerms.some(term =>
+        log.message.toLowerCase().includes(term.toLowerCase()) ||
+        log.context.toLowerCase().includes(term.toLowerCase())
+      );
+      
+      // Handle date range filtering
+      const dateRange = activeTab?.dateRange;
+      let dateMatch = true;
+      if (dateRange && (dateRange.start || dateRange.end)) {
+        const logDate = new Date(log.timestamp);
+        const logDateString = logDate.toISOString().split('T')[0];
+        
+        if (dateRange.start && logDateString < dateRange.start) {
+          dateMatch = false;
+        }
+        if (dateRange.end && logDateString > dateRange.end) {
+          dateMatch = false;
+        }
+      }
+      
+      return levelMatch && searchMatch && dateMatch;
+    }).sort((a, b) => {
+      const sortMultiplier = activeTab?.sortDirection === 'asc' ? 1 : -1;
+      return (a.timestamp - b.timestamp) * sortMultiplier;
+    });
+
+    // Format logs as text
+    const logsText = filteredLogs.map(log => {
+      const fileName = activeTab.searchScope === 'all' && (log as any).fileName ? ` [${(log as any).fileName}]` : '';
+      return `[${new Date(log.timestamp).toLocaleString()}] [${log.level.toUpperCase()}] [PID: ${log.pid}] [${log.context}]${fileName}\n${log.message}`;
+    }).join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(logsText);
+      setCopyAllCopied(true);
+      setTimeout(() => setCopyAllCopied(false), 2000); // Reset after 2 seconds
+    } catch (err) {
+      console.error('Failed to copy logs: ', err);
+    }
+  };
+
   return (
     <>
       <div className="max-w-6xl mx-auto">
@@ -511,9 +568,33 @@ const LogAnalyzer = () => {
                   {/* Statistics */}
                   <LogStats stats={stats} />
 
+                  {/* Log count and copy button */}
+                  <div className="flex items-center justify-between mt-4 mb-2 min-h-[36px]">
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        Showing {Math.min((currentPage - 1) * logsPerPage + 1, filteredAndSortedLogs.length)} - {Math.min(currentPage * logsPerPage, filteredAndSortedLogs.length)} of {filteredAndSortedLogs.length} logs
+                      </span>
+                      {/* Copy All Button - Only show when there are search terms */}
+                      {activeTab.searchTerms.length > 0 && (
+                        <button
+                          onClick={copyAllLogs}
+                          className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
+                          title="Copy all filtered logs"
+                        >
+                          {copyAllCopied ? (
+                            <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                          Copy all filtered logs
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Log View or Pattern View */}
                   {activeTab.viewMode === 'logs' ? (
-                    <div className="space-y-2 mt-4">
+                    <div className="space-y-2">
                       {paginatedLogs.map((log, index) => (
                         <LogEntry 
                           key={index} 
