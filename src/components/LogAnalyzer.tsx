@@ -13,28 +13,29 @@ import { Plus, X, Copy, Check } from 'lucide-react';
 import JSZip from 'jszip';
 import { ThemeToggle } from "./theme-toggle";
 import axios from 'axios';
-import { Modal } from '../components/ui/modal';
 
 interface Tab {
   id: string;
   name: string;
   files: LogFile[];
   selectedFileId: string | null;
-  filter: string;
+  filter: string | string[];
   searchTerm: string;
   searchTerms: string[]; // Array of search terms for tag display
   searchScope: 'current' | 'all'; // New property for search scope
   dateRange: { start: string; end: string }; // Date filter range
   sortDirection: 'asc' | 'desc';
   viewMode: 'logs' | 'patterns';
-  showConversationButton?: boolean; // Added optional property for button visibility
   response?: string | string[]; // Added optional property for storing response
+  aiSearchTerms?: string[]; // Track which terms came from AI
+  isAISearchActive?: boolean; // Track if AI search is currently active
+  aiSearchState?: 'disabled' | 'loading' | 'ready'; // Track AI search button state
 }
 
 const LogAnalyzer = () => {
   const [tabs, setTabs] = useState<Tab[]>([{
     id: crypto.randomUUID(),
-    name: 'Tab 1',
+    name: 'Ticket 1',
     files: [],
     selectedFileId: null,
     filter: 'all',
@@ -44,6 +45,9 @@ const LogAnalyzer = () => {
     dateRange: { start: '', end: '' }, // Initialize date range
     sortDirection: 'desc',
     viewMode: 'logs',
+    aiSearchTerms: [], // Initialize AI search terms
+    isAISearchActive: false, // Initialize AI search state
+    aiSearchState: 'disabled', // Initialize as disabled
   }]); // Ensure at least one tab is always initialized
 
   const [activeTabId, setActiveTabId] = useState<string | null>(tabs.length > 0 ? tabs[0].id : null); // Safeguard against empty tabs array
@@ -53,14 +57,12 @@ const LogAnalyzer = () => {
   const [pageInput, setPageInput] = useState(''); // Input for jumping to specific page
   const [copyAllCopied, setCopyAllCopied] = useState(false); // State for copy button animation
   const logsPerPage = 50; // Maximum logs per page
-  const [modalContent, setModalContent] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Add a new tab
   const addTab = () => {
     const newTab: Tab = {
       id: crypto.randomUUID(),
-      name: `Tab ${tabs.length + 1}`,
+      name: `Ticket ${tabs.length + 1}`,
       files: [],
       selectedFileId: null,
       filter: 'all',
@@ -70,6 +72,9 @@ const LogAnalyzer = () => {
       dateRange: { start: '', end: '' }, // Initialize date range
       sortDirection: 'desc',
       viewMode: 'logs',
+      aiSearchTerms: [], // Initialize AI search terms
+      isAISearchActive: false, // Initialize AI search state
+      aiSearchState: 'disabled', // Initialize as disabled
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id); // Set the new tab as active
@@ -103,20 +108,34 @@ const LogAnalyzer = () => {
         setTempTabName('');
         return;
       }
-      // Always update the tab name and clear previous response/button
+      // Always update the tab name and clear previous response
       setTabs((prev) =>
         prev.map((tab) =>
           tab.id === currentEditingTabId
-            ? { ...tab, name: tempTabName, showConversationButton: false, response: undefined }
+            ? { 
+                ...tab, 
+                name: tempTabName, 
+                response: undefined,
+                aiSearchTerms: [],
+                isAISearchActive: false,
+                aiSearchState: tempTabName.trim() ? 'loading' : 'disabled' // Set to loading if ticket number provided
+              }
             : tab
         )
       );
       setEditingTabId(null);
       setTempTabName('');
+      
+      // Only run API request if we have a ticket number
+      if (tempTabName.trim() === '') {
+        return;
+      }
+      
       // Run the HTTP request for the new ticket number
       try {
+        console.log('Making API request for ticket:', tempTabName);
         const response = await axios.get(
-          `https://rabid-force-polish.flows.pstmn.io/api/default/get-summary?ticketNumber=${tempTabName}`,
+          `https://rabid-force-polish.flows.pstmn.io/api/default/get-summary?ticket_id=${tempTabName}`,
           {
             headers: {
               Authorization:
@@ -124,28 +143,89 @@ const LogAnalyzer = () => {
             },
           }
         );
-        if (response.data && (Array.isArray(response.data) || typeof response.data === 'string')) {
+        console.log('API response received:', response.data);
+        console.log('Response type:', typeof response.data);
+        console.log('Is array:', Array.isArray(response.data));
+        console.log('Response length:', response.data?.length);
+        console.log('Response truthy:', !!response.data);
+        console.log('Response as JSON:', JSON.stringify(response.data));
+        console.log('Full response object:', response);
+        
+        // Handle different response formats
+        let conversationData = null;
+        
+        if (response.data) {
+          if (typeof response.data === 'string' && response.data.trim().length > 0) {
+            conversationData = response.data.trim();
+            console.log('Valid string response found:', conversationData);
+          } else if (Array.isArray(response.data) && response.data.length > 0) {
+            conversationData = response.data;
+            console.log('Valid array response found:', conversationData);
+          } else {
+            console.log('Invalid response - empty string or array');
+          }
+        } else {
+          console.log('No response.data found');
+        }
+        
+        if (conversationData) {
+          console.log('Valid response format found - storing conversation data and auto-applying AI search');
+          
+          // Parse AI terms from the response
+          let aiTerms: string[] = [];
+          if (typeof conversationData === 'string') {
+            aiTerms = conversationData
+              .split(',')
+              .map(term => term.trim())
+              .filter(term => term.length > 0);
+          } else if (Array.isArray(conversationData)) {
+            aiTerms = conversationData
+              .map(term => String(term).trim())
+              .filter(term => term.length > 0);
+          }
+          
+          // Get current tab to preserve existing search terms
+          const currentTab = tabs.find(tab => tab.id === currentEditingTabId);
+          const existingUserTerms = currentTab?.searchTerms || [];
+          
+          // Merge existing user terms with new AI terms (avoid duplicates)
+          const mergedTerms = [...existingUserTerms];
+          aiTerms.forEach(term => {
+            if (!mergedTerms.includes(term)) {
+              mergedTerms.push(term);
+            }
+          });
+          
           setTabs((prevTabs) =>
             prevTabs.map((tab) =>
               tab.id === currentEditingTabId
-                ? { ...tab, showConversationButton: true, response: response.data }
+                ? { 
+                    ...tab, 
+                    response: conversationData, 
+                    aiSearchState: 'ready',
+                    searchTerms: mergedTerms, // Preserve existing + add AI terms
+                    aiSearchTerms: aiTerms,
+                    isAISearchActive: true
+                  }
                 : tab
             )
           );
         } else {
+          console.log('Invalid response format - setting disabled state');
           setTabs((prevTabs) =>
             prevTabs.map((tab) =>
               tab.id === currentEditingTabId
-                ? { ...tab, showConversationButton: false, response: undefined }
+                ? { ...tab, response: undefined, aiSearchState: 'disabled' }
                 : tab
             )
           );
         }
-      } catch {
+      } catch (error) {
+        console.error('API request failed:', error);
         setTabs((prevTabs) =>
           prevTabs.map((tab) =>
             tab.id === currentEditingTabId
-              ? { ...tab, showConversationButton: false, response: undefined }
+              ? { ...tab, response: undefined, aiSearchState: 'disabled' }
               : tab
           )
         );
@@ -238,7 +318,19 @@ const LogAnalyzer = () => {
   // Filter and sort the logs based on the active tab's state
   const filteredAndSortedLogs = currentLogs
     .filter((log) => {
-      const levelMatch = activeTab?.filter === 'all' || log.level === activeTab?.filter;
+      // Handle both single filter and multiple filter combinations
+      const filter = activeTab?.filter;
+      let levelMatch = false;
+      
+      if (filter === 'all') {
+        levelMatch = true;
+      } else if (Array.isArray(filter)) {
+        // Multiple filters selected - log matches if it's any of the selected levels
+        levelMatch = filter.length === 0 || filter.includes(log.level);
+      } else {
+        // Single filter selected
+        levelMatch = log.level === filter;
+      }
       
       // Handle multi-term OR search
       const searchTerms = activeTab?.searchTerms || [];
@@ -327,7 +419,19 @@ const LogAnalyzer = () => {
       : (activeTab?.files.find((file) => file.id === activeTab?.selectedFileId)?.logs || []);
 
     const filteredLogs = currentLogs.filter((log) => {
-      const levelMatch = activeTab?.filter === 'all' || log.level === activeTab?.filter;
+      // Handle both single filter and multiple filter combinations
+      const filter = activeTab?.filter;
+      let levelMatch = false;
+      
+      if (filter === 'all') {
+        levelMatch = true;
+      } else if (Array.isArray(filter)) {
+        // Multiple filters selected - log matches if it's any of the selected levels
+        levelMatch = filter.length === 0 || filter.includes(log.level);
+      } else {
+        // Single filter selected
+        levelMatch = log.level === filter;
+      }
       
       // Handle multi-term OR search
       const searchTerms = activeTab?.searchTerms || [];
@@ -372,6 +476,94 @@ const LogAnalyzer = () => {
     }
   };
 
+  // Apply AI-Enhanced Search terms from conversation data
+  const handleApplyAISearch = () => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (!activeTab || !activeTab.response || activeTab.aiSearchState !== 'ready') return;
+
+    if (activeTab.isAISearchActive) {
+      // Remove AI search terms - keep only user-added terms
+      const userTerms = activeTab.searchTerms.filter(term => 
+        !activeTab.aiSearchTerms?.includes(term)
+      );
+      
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId
+            ? { 
+                ...tab, 
+                searchTerms: userTerms, 
+                searchTerm: '', 
+                aiSearchTerms: [],
+                isAISearchActive: false 
+              }
+            : tab
+        )
+      );
+    } else {
+      // Add AI search terms
+      let aiTerms: string[] = [];
+      
+      if (typeof activeTab.response === 'string') {
+        // Split comma-separated terms and clean them up
+        aiTerms = activeTab.response
+          .split(',')
+          .map(term => term.trim())
+          .filter(term => term.length > 0);
+      } else if (Array.isArray(activeTab.response)) {
+        // Handle array responses
+        aiTerms = activeTab.response
+          .map(term => String(term).trim())
+          .filter(term => term.length > 0);
+      }
+
+      // Combine existing user terms with AI terms (avoid duplicates)
+      const existingTerms = activeTab.searchTerms || [];
+      const userTerms = existingTerms.filter(term => 
+        !activeTab.aiSearchTerms?.includes(term)
+      );
+      const newTerms = [...userTerms];
+      
+      aiTerms.forEach(term => {
+        if (!newTerms.includes(term)) {
+          newTerms.push(term);
+        }
+      });
+
+      // Apply the search terms to the current tab
+      setTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === activeTabId
+            ? { 
+                ...tab, 
+                searchTerms: newTerms, 
+                searchTerm: '', 
+                aiSearchTerms: aiTerms,
+                isAISearchActive: true 
+              }
+            : tab
+        )
+      );
+    }
+  };
+
+  // Clear all search terms (both user and AI)
+  const handleClearAllSearchTerms = () => {
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId
+          ? { 
+              ...tab, 
+              searchTerms: [], 
+              searchTerm: '',
+              aiSearchTerms: [],
+              isAISearchActive: false
+            }
+          : tab
+      )
+    );
+  };
+
   return (
     <>
       <div className="max-w-6xl mx-auto">
@@ -391,11 +583,11 @@ const LogAnalyzer = () => {
             </CardHeader>
             <CardContent>
               {/* Tab Navigation */}
-              <div className="flex overflow-x-auto gap-2 border-b border-gray-300 dark:border-gray-700">
+              <div className="flex overflow-x-auto gap-2 border-b border-gray-300 dark:border-gray-700 min-h-[48px]">
                 {tabs.map((tab) => (
                   <div
                     key={tab.id}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer min-h-[40px] ${
                       activeTabId === tab.id
                         ? 'bg-white dark:bg-gray-900 text-black dark:text-white border border-gray-300 dark:border-gray-700'
                         : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
@@ -416,35 +608,43 @@ const LogAnalyzer = () => {
                             if (e.key === 'Enter') saveRenamedTab();
                           }}
                           placeholder="Enter ticket number"
-                          className="px-2 py-1 rounded border border-gray-300 text-black dark:text-white italic"
+                          className="bg-transparent border-none outline-none text-inherit italic min-w-0 placeholder-gray-400 dark:placeholder-gray-500"
+                          style={{ 
+                            fontSize: 'inherit', 
+                            lineHeight: 'inherit', 
+                            padding: 0,
+                            margin: 0,
+                            height: 'auto',
+                            width: Math.max(140, tempTabName.length * 8 + 40) + 'px'
+                          }}
                           autoFocus
                         />
                       ) : (
-                        <div className="flex items-center gap-1">
-                          <span className="truncate">{tab.name}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startRenamingTab(tab.id); // Updated to match the new function signature
-                            }}
-                            className="text-gray-400 hover:text-gray-600"
+                        <span className="truncate">{tab.name}</span>
+                      )}
+                      {editingTabId !== tab.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startRenamingTab(tab.id); // Updated to match the new function signature
+                          }}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
                           >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              className="h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M15.232 5.232l3.536 3.536M9 11l3.536-3.536m0 0L15.232 5.232m-3.536 3.536L5.232 15.232m0 0L3 21l5.768-2.232m0 0L15.232 9.768"
-                              />
-                            </svg>
-                          </button>
-                        </div>
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M15.232 5.232l3.536 3.536M9 11l3.536-3.536m0 0L15.232 5.232m-3.536 3.536L5.232 15.232m0 0L3 21l5.768-2.232m0 0L15.232 9.768"
+                            />
+                          </svg>
+                        </button>
                       )}
                       <button
                         onClick={(e) => {
@@ -471,17 +671,6 @@ const LogAnalyzer = () => {
                       multiple
                       className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-gray-700 file:text-blue-700 dark:file:text-gray-300 hover:file:bg-blue-100 dark:hover:file:bg-gray-600 mt-4"
                     />
-                    <div className="flex items-center gap-4">
-                      {/* Conditional rendering for 'Show Conversation' button */}
-                      {activeTab && activeTab.showConversationButton && (
-                        <button
-                          onClick={() => setIsModalOpen(true)}
-                          className="px-4 py-1 rounded-full bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 text-center whitespace-nowrap"
-                        >
-                          Show Conversation
-                        </button>
-                      )}
-                    </div>
                   </div>
 
                   {/* File Selector */}
@@ -563,6 +752,12 @@ const LogAnalyzer = () => {
                         )
                       )
                     }
+                    conversationData={activeTab.response}
+                    onApplyAISearch={activeTab.aiSearchState === 'ready' ? handleApplyAISearch : undefined}
+                    aiSearchTerms={activeTab.aiSearchTerms || []}
+                    isAISearchActive={activeTab.isAISearchActive || false}
+                    aiSearchState={activeTab.aiSearchState || 'disabled'}
+                    onClearAllSearchTerms={handleClearAllSearchTerms}
                   />
 
                   {/* Statistics */}
@@ -726,26 +921,6 @@ const LogAnalyzer = () => {
           </Card>
         </div>
       </div>
-      {/* Updated modal content to handle JSON responses properly */}
-      {isModalOpen && activeTab && activeTab.response && (
-        <Modal onClose={() => setIsModalOpen(false)}>
-          <div className="p-4">
-            <div>
-              {Array.isArray(activeTab.response) ? (
-                activeTab.response.map((item, index) => (
-                  <p key={index} className="mb-2">{item}</p>
-                ))
-              ) : typeof activeTab.response === 'string' ? (
-                activeTab.response.split('\n').map((line, index) => (
-                  <p key={index} className="mb-2">{line}</p>
-                ))
-              ) : (
-                <p className="mb-2">Invalid response format</p>
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
     </>
   );
 };

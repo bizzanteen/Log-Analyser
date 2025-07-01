@@ -3,8 +3,8 @@ import { LogEntry } from '@/utils/logParser';
 import { useState } from 'react';
 
 interface LogFiltersProps {
-  filter: string;
-  setFilter: (filter: string) => void;
+  filter: string | string[];
+  setFilter: (filter: string | string[]) => void;
   searchTerm: string;
   setSearchTerm: (term: string) => void;
   searchTerms: string[];
@@ -15,6 +15,12 @@ interface LogFiltersProps {
   setSortDirection: (direction: 'asc' | 'desc') => void;
   dateRange: { start: string; end: string };
   setDateRange: (range: { start: string; end: string }) => void;
+  conversationData?: string | string[];
+  onApplyAISearch?: () => void;
+  aiSearchTerms?: string[]; // Track which terms came from AI
+  isAISearchActive?: boolean; // Track if AI search is currently active
+  aiSearchState?: 'disabled' | 'loading' | 'ready'; // Track AI search button state
+  onClearAllSearchTerms?: () => void; // Function to clear all search terms
 }
 
 export const LogFilters = ({
@@ -29,9 +35,50 @@ export const LogFilters = ({
   sortDirection,
   setSortDirection,
   dateRange,
-  setDateRange
+  setDateRange,
+  conversationData,
+  onApplyAISearch,
+  aiSearchTerms = [],
+  isAISearchActive = false,
+  aiSearchState = 'disabled',
+  onClearAllSearchTerms
 }: LogFiltersProps) => {
   const [tempSearchInput, setTempSearchInput] = useState('');
+
+  // Ensure filter is always an array for easier processing
+  const selectedFilters = Array.isArray(filter) ? filter : [filter];
+
+  const handleFilterToggle = (filterType: string) => {
+    if (filterType === 'all') {
+      setFilter('all');
+      return;
+    }
+
+    const currentFilters = Array.isArray(filter) ? filter : (filter === 'all' ? [] : [filter]);
+    
+    if (currentFilters.includes(filterType)) {
+      // Remove the filter if it's already selected
+      const newFilters = currentFilters.filter(f => f !== filterType);
+      setFilter(newFilters.length === 0 ? 'all' : newFilters);
+    } else {
+      // Add the filter if it's not selected
+      const newFilters = [...currentFilters.filter(f => f !== 'all'), filterType];
+      
+      // If all three log levels are selected, switch to "All"
+      if (newFilters.length === 3 && newFilters.includes('info') && newFilters.includes('warn') && newFilters.includes('error')) {
+        setFilter('all');
+      } else {
+        setFilter(newFilters);
+      }
+    }
+  };
+
+  const isFilterActive = (filterType: string) => {
+    if (filterType === 'all') {
+      return filter === 'all';
+    }
+    return selectedFilters.includes(filterType);
+  };
 
   const handleSearchInputChange = (value: string) => {
     setTempSearchInput(value);
@@ -92,20 +139,31 @@ export const LogFilters = ({
         <Search className="w-4 h-4 text-gray-500" />
         <div className="flex-1 flex items-start gap-2 p-2 border rounded bg-white dark:bg-gray-900 min-h-[48px] flex-wrap">
           {/* Search Tags */}
-          {searchTerms.map((term, index) => (
-            <span
-              key={index}
-              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full text-sm"
-            >
-              {term}
-              <button
-                onClick={() => removeSearchTerm(index)}
-                className="hover:bg-blue-200 dark:hover:bg-blue-800 rounded-full p-0.5"
+          {searchTerms.map((term, index) => {
+            const isAITerm = aiSearchTerms.includes(term);
+            return (
+              <span
+                key={index}
+                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm ${
+                  isAITerm 
+                    ? 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
+                    : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
+                }`}
               >
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          ))}
+                {term}
+                <button
+                  onClick={() => removeSearchTerm(index)}
+                  className={`rounded-full p-0.5 ${
+                    isAITerm
+                      ? 'hover:bg-purple-200 dark:hover:bg-purple-800'
+                      : 'hover:bg-blue-200 dark:hover:bg-blue-800'
+                  }`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
           {/* Search Input */}
           <input
             type="text"
@@ -116,6 +174,17 @@ export const LogFilters = ({
             className="flex-1 min-w-[200px] outline-none bg-transparent"
           />
         </div>
+        {/* Clear All Button */}
+        {searchTerms.length > 0 && onClearAllSearchTerms && (
+          <button
+            onClick={onClearAllSearchTerms}
+            className="px-3 py-2 rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center gap-2 whitespace-nowrap"
+            title="Clear all search terms"
+          >
+            <X className="w-4 h-4" />
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Date Filter */}
@@ -198,28 +267,65 @@ export const LogFilters = ({
 
         {/* Filter Buttons */}
         <button
-          onClick={() => setFilter('all')}
-          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'all' ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+          onClick={() => handleFilterToggle('all')}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('all') ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
         >
           <Globe className="w-4 h-4" /> All
         </button>
         <button
-          onClick={() => setFilter('info')}
-          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'info' ? 'bg-blue-500 text-white dark:bg-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+          onClick={() => handleFilterToggle('info')}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-blue-500 text-white dark:bg-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
         >
           <Info className="w-4 h-4" /> Info
         </button>
         <button
-          onClick={() => setFilter('warn')}
-          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'warn' ? 'bg-yellow-500 text-white dark:bg-yellow-700' : 'bg-gray-100 dark:bg-gray-700 text-yellow-700 dark:text-yellow-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+          onClick={() => handleFilterToggle('warn')}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('warn') ? 'bg-yellow-500 text-white dark:bg-yellow-700' : 'bg-gray-100 dark:bg-gray-700 text-yellow-700 dark:text-yellow-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
         >
           <AlertTriangle className="w-4 h-4" /> Warnings
         </button>
         <button
-          onClick={() => setFilter('error')}
-          className={`px-4 py-2 rounded flex items-center gap-2 ${filter === 'error' ? 'bg-red-500 text-white dark:bg-red-700' : 'bg-gray-100 dark:bg-gray-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+          onClick={() => handleFilterToggle('error')}
+          className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('error') ? 'bg-red-500 text-white dark:bg-red-700' : 'bg-gray-100 dark:bg-gray-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
         >
           <AlertCircle className="w-4 h-4" /> Errors
+        </button>
+
+        {/* AI Search Button - Always visible */}
+        <div className="w-px h-6 bg-gray-300 mx-2" />
+        <button
+          onClick={aiSearchState === 'ready' ? onApplyAISearch : undefined}
+          disabled={aiSearchState !== 'ready'}
+          className={`px-4 py-2 rounded flex items-center gap-2 min-w-[120px] justify-center ${
+            aiSearchState === 'disabled'
+              ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+              : aiSearchState === 'loading'
+              ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 cursor-wait'
+              : isAISearchActive
+              ? 'bg-purple-500 text-white dark:bg-purple-600'
+              : 'bg-gray-100 dark:bg-gray-700 text-purple-700 dark:text-purple-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+          }`}
+          title={
+            aiSearchState === 'disabled' 
+              ? "Please enter ticket number to use this feature"
+              : aiSearchState === 'loading'
+              ? "Loading conversation data..."
+              : isAISearchActive 
+              ? "Remove AI-generated search terms" 
+              : "Apply AI-generated search terms"
+          }
+        >
+          {aiSearchState === 'loading' ? (
+            <>
+              <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+              Loading...
+            </>
+          ) : (
+            <>
+              <Search className="w-4 h-4" />
+              AI Search
+            </>
+          )}
         </button>
       </div>
     </div>
