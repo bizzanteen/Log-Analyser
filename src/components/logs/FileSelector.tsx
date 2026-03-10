@@ -6,6 +6,7 @@ interface FileSelectorProps {
   selectedFileId: string | null;
   onFileSelect: (id: string) => void;
   removeFile: (id: string) => void; // New prop for removing files
+  searchScope: 'current' | 'all';
 }
 
 export const FileSelector: React.FC<FileSelectorProps> = ({
@@ -13,6 +14,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
   selectedFileId,
   onFileSelect,
   removeFile,
+  searchScope,
 }) => {
   const memoizedFiles = useMemo(() => files, [files]);
 
@@ -22,7 +24,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
         <div
           key={file.id}
           className={`flex items-center gap-2 px-3 py-1 rounded-full cursor-pointer mb-2 border-none ${
-            selectedFileId === file.id
+            searchScope === 'all' || selectedFileId === file.id
               ? 'bg-blue-100 dark:bg-[#1d4ed8] text-blue-700 dark:text-blue-200'
               : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200'
           }`}

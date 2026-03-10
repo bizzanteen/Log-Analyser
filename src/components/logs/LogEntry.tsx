@@ -16,6 +16,27 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
   const [copied, setCopied] = useState(false);
 
   const getIcon = () => {
+    const statusCode = Number(log.pid);
+    const isHttpStatus = !Number.isNaN(statusCode) && statusCode >= 100 && statusCode < 600;
+
+    if (isHttpStatus) {
+      if (statusCode >= 500) {
+        return <lucideReact.AlertCircle className="w-4 h-4 text-red-500" />;
+      }
+      if (statusCode >= 400) {
+        return <lucideReact.AlertCircle className="w-4 h-4 text-orange-500 cursor-pointer z-[100000]" onClick={handleIconClick} />;
+      }
+      if (statusCode >= 300) {
+        return <lucideReact.AlertTriangle className="w-4 h-4 text-amber-500" />;
+      }
+      if (statusCode >= 200) {
+        return <lucideReact.CheckCircle className="w-4 h-4 text-green-500" />;
+      }
+      if (statusCode >= 100) {
+        return <lucideReact.Info className="w-4 h-4 text-blue-500" />;
+      }
+    }
+
     switch (log.level) {
       case 'error':
         return <lucideReact.AlertCircle className="w-4 h-4 text-red-500 cursor-pointer z-[100000]" onClick={handleIconClick} />;
@@ -27,6 +48,27 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
   };
 
   const getBgColor = () => {
+    const statusCode = Number(log.pid);
+    const isHttpStatus = !Number.isNaN(statusCode) && statusCode >= 100 && statusCode < 600;
+
+    if (isHttpStatus) {
+      if (statusCode >= 500) {
+        return 'bg-red-50 dark:bg-red-900/30';
+      }
+      if (statusCode >= 400) {
+        return 'bg-orange-50 dark:bg-orange-900/30';
+      }
+      if (statusCode >= 300) {
+        return 'bg-amber-50 dark:bg-amber-900/30';
+      }
+      if (statusCode >= 200) {
+        return 'bg-green-50 dark:bg-green-900/30';
+      }
+      if (statusCode >= 100) {
+        return 'bg-blue-50 dark:bg-blue-900/30';
+      }
+    }
+
     switch (log.level) {
       case 'error':
         return 'bg-red-50 dark:bg-red-900';

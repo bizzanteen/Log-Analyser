@@ -2,12 +2,13 @@
 
 import React, { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats } from '../utils/logParser';
+import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats, parseHarContent } from '../utils/logParser';
 import { LogEntry } from './logs/LogEntry';
 import { LogFilters } from './logs/LogFilters';
 import { LogStats } from './logs/LogStats';
 import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
+import { HarTimelineView } from './logs/HarTimelineView';
 import { findPatterns } from '../utils/patternMatcher';
 import { Plus, X, Copy, Check } from 'lucide-react';
 import JSZip from 'jszip';
@@ -33,15 +34,16 @@ interface Tab {
 }
 
 const LogAnalyzer = () => {
+  const [logSourceType, setLogSourceType] = useState<'desktop' | 'har'>('desktop');
   const [tabs, setTabs] = useState<Tab[]>([{
     id: crypto.randomUUID(),
     name: 'Ticket 1',
     files: [],
     selectedFileId: null,
-    filter: 'all',
+    filter: 'error',
     searchTerm: '',
     searchTerms: [], // Initialize as empty array
-    searchScope: 'current', // Default search scope
+    searchScope: 'all', // Default search scope
     dateRange: { start: '', end: '' }, // Initialize date range
     sortDirection: 'desc',
     viewMode: 'logs',
@@ -57,6 +59,7 @@ const LogAnalyzer = () => {
   const [pageInput, setPageInput] = useState(''); // Input for jumping to specific page
   const [copyAllCopied, setCopyAllCopied] = useState(false); // State for copy button animation
   const logsPerPage = 50; // Maximum logs per page
+  const [selectedHarIndex, setSelectedHarIndex] = useState<number | null>(null);
 
   // Add a new tab
   const addTab = () => {
@@ -65,10 +68,10 @@ const LogAnalyzer = () => {
       name: `Ticket ${tabs.length + 1}`,
       files: [],
       selectedFileId: null,
-      filter: 'all',
+      filter: 'error',
       searchTerm: '',
       searchTerms: [], // Initialize as empty array
-      searchScope: 'current', // Default search scope
+      searchScope: 'all', // Default search scope
       dateRange: { start: '', end: '' }, // Initialize date range
       sortDirection: 'desc',
       viewMode: 'logs',
@@ -246,7 +249,7 @@ const LogAnalyzer = () => {
         const file = fileList[i];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
-        if (fileExtension === 'zip') {
+        if (logSourceType === 'desktop' && fileExtension === 'zip') {
           // Handle .zip files
           const zip = new JSZip();
           const zipContents = await zip.loadAsync(file);
@@ -267,26 +270,35 @@ const LogAnalyzer = () => {
               id: crypto.randomUUID(),
               name: filename,
               logs: parsedLogs,
+              source: 'desktop',
             });
           }
         } else {
           // Handle normal files
           const text = await file.text();
-          const lines = text.split('\n');
-          const parsedLogs = lines
-            .map((line, index) => {
-              const log = parseLogLine(line);
-              if (!log) {
-                console.warn(`Failed to parse line ${index} in ${file.name}:`, line);
-              }
-              return log;
-            })
-            .filter((log): log is LogEntryType => log !== null);
+
+          let parsedLogs: LogEntryType[] = [];
+
+          if (logSourceType === 'har' || fileExtension === 'har') {
+            parsedLogs = parseHarContent(text);
+          } else {
+            const lines = text.split('\n');
+            parsedLogs = lines
+              .map((line, index) => {
+                const log = parseLogLine(line);
+                if (!log) {
+                  console.warn(`Failed to parse line ${index} in ${file.name}:`, line);
+                }
+                return log;
+              })
+              .filter((log): log is LogEntryType => log !== null);
+          }
 
           newFiles.push({
             id: crypto.randomUUID(),
             name: file.name,
             logs: parsedLogs,
+            source: logSourceType === 'har' || fileExtension === 'har' ? 'har' : 'desktop',
           });
         }
       }
@@ -310,20 +322,46 @@ const LogAnalyzer = () => {
   // Get the active tab
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
+  const getFilesForCurrentSource = (tab?: Tab) => {
+    if (!tab) return [];
+    return tab.files.filter(file =>
+      logSourceType === 'har'
+        ? file.source === 'har'
+        : (file.source ?? 'desktop') === 'desktop'
+    );
+  };
+
+  const activeSourceFiles = getFilesForCurrentSource(activeTab);
+  const effectiveSelectedFileId =
+    activeSourceFiles.find(f => f.id === activeTab?.selectedFileId)?.id ??
+    activeSourceFiles[0]?.id ??
+    null;
+
   // Get logs based on search scope (current file or all files)
   const currentLogs = activeTab?.searchScope === 'all' 
-    ? activeTab.files.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
-    : (activeTab?.files.find((file) => file.id === activeTab?.selectedFileId)?.logs || []);
+    ? activeSourceFiles.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
+    : (activeSourceFiles.find((file) => file.id === effectiveSelectedFileId)?.logs || []);
 
   // Filter and sort the logs based on the active tab's state
   const filteredAndSortedLogs = currentLogs
     .filter((log) => {
       // Handle both single filter and multiple filter combinations
       const filter = activeTab?.filter;
-      let levelMatch = false;
-      
+      let levelMatch = true;
+
       if (filter === 'all') {
         levelMatch = true;
+      } else if (logSourceType === 'har') {
+        const statusCode = Number((log as any).pid);
+        let bucket: string = 'other';
+        if (!Number.isNaN(statusCode)) {
+          if (statusCode >= 500) bucket = '5xx';
+          else if (statusCode >= 400) bucket = '4xx';
+          else if (statusCode >= 300) bucket = '3xx';
+          else if (statusCode >= 200) bucket = '2xx';
+          else if (statusCode >= 100) bucket = '1xx';
+        }
+        levelMatch = filter === bucket;
       } else if (Array.isArray(filter)) {
         // Multiple filters selected - log matches if it's any of the selected levels
         levelMatch = filter.length === 0 || filter.includes(log.level);
@@ -414,17 +452,29 @@ const LogAnalyzer = () => {
     if (!activeTab) return;
 
     // Get the same filtered logs that are currently displayed
+    const sourceFiles = getFilesForCurrentSource(activeTab);
     const currentLogs = activeTab?.searchScope === 'all' 
-      ? activeTab.files.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
-      : (activeTab?.files.find((file) => file.id === activeTab?.selectedFileId)?.logs || []);
+      ? sourceFiles.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
+      : (sourceFiles.find((file) => file.id === effectiveSelectedFileId)?.logs || []);
 
     const filteredLogs = currentLogs.filter((log) => {
       // Handle both single filter and multiple filter combinations
       const filter = activeTab?.filter;
-      let levelMatch = false;
-      
+      let levelMatch = true;
+
       if (filter === 'all') {
         levelMatch = true;
+      } else if (logSourceType === 'har') {
+        const statusCode = Number((log as any).pid);
+        let bucket: string = 'other';
+        if (!Number.isNaN(statusCode)) {
+          if (statusCode >= 500) bucket = '5xx';
+          else if (statusCode >= 400) bucket = '4xx';
+          else if (statusCode >= 300) bucket = '3xx';
+          else if (statusCode >= 200) bucket = '2xx';
+          else if (statusCode >= 100) bucket = '1xx';
+        }
+        levelMatch = filter === bucket;
       } else if (Array.isArray(filter)) {
         // Multiple filters selected - log matches if it's any of the selected levels
         levelMatch = filter.length === 0 || filter.includes(log.level);
@@ -474,6 +524,18 @@ const LogAnalyzer = () => {
     } catch (err) {
       console.error('Failed to copy logs: ', err);
     }
+  };
+
+  // Clear all log files for the active tab
+  const clearAllFiles = () => {
+    if (!activeTabId) return;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === activeTabId
+          ? { ...tab, files: [], selectedFileId: null }
+          : tab
+      )
+    );
   };
 
   // Apply AI-Enhanced Search terms from conversation data
@@ -572,112 +634,81 @@ const LogAnalyzer = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <span>Log Analyzer</span>
-                <button
-                  onClick={addTab}
-                  className="ml-auto px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 dark:bg-gray-700 dark:hover:bg-gray-600"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                <div className="ml-auto" />
                 <ThemeToggle />
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Tab Navigation */}
-              <div className="flex overflow-x-auto gap-2 border-b border-gray-300 dark:border-gray-700 min-h-[48px]">
-                {tabs.map((tab) => (
-                  <div
-                    key={tab.id}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer min-h-[40px] ${
-                      activeTabId === tab.id
-                        ? 'bg-white dark:bg-gray-900 text-black dark:text-white border border-gray-300 dark:border-gray-700'
-                        : 'bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                    }`}
-                    onClick={() => setActiveTabId(tab.id)}
-                  >
-                    <div className="flex items-center gap-1">
-                      {editingTabId === tab.id ? (
-                        <input
-                          type="text"
-                          value={tempTabName}
-                          onChange={(e) => {
-                            const numericValue = e.target.value.replace(/[^0-9]/g, ''); // Remove non-numeric characters
-                            setTempTabName(numericValue);
-                          }}
-                          onBlur={saveRenamedTab}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') saveRenamedTab();
-                          }}
-                          placeholder="Enter ticket number"
-                          className="bg-transparent border-none outline-none text-inherit italic min-w-0 placeholder-gray-400 dark:placeholder-gray-500"
-                          style={{ 
-                            fontSize: 'inherit', 
-                            lineHeight: 'inherit', 
-                            padding: 0,
-                            margin: 0,
-                            height: 'auto',
-                            width: Math.max(140, tempTabName.length * 8 + 40) + 'px'
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="truncate">{tab.name}</span>
-                      )}
-                      {editingTabId !== tab.id && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            startRenamingTab(tab.id); // Updated to match the new function signature
-                          }}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15.232 5.232l3.536 3.536M9 11l3.536-3.536m0 0L15.232 5.232m-3.536 3.536L5.232 15.232m0 0L3 21l5.768-2.232m0 0L15.232 9.768"
-                            />
-                          </svg>
-                        </button>
-                      )}
+              {activeTab ? (
+                <div>
+                  {/* Log source type toggle */}
+                  <div className="mb-4 flex items-center gap-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Source:</span>
+                    <div className="flex rounded border bg-white dark:bg-gray-900">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeTab(tab.id);
+                        onClick={() => {
+                          setLogSourceType('desktop');
+                          setTabs(prev =>
+                            prev.map(tab => ({
+                              ...tab,
+                              filter: tab.filter === 'all' ? 'error' : tab.filter,
+                            }))
+                          );
                         }}
-                        className="text-red-500 hover:text-red-700"
+                        className={`px-4 py-2 rounded-l flex items-center gap-2 text-sm ${
+                          logSourceType === 'desktop'
+                            ? 'bg-blue-500 text-white dark:bg-blue-600'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
                       >
-                        <X className="w-4 h-4" />
+                        Desktop Logs
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLogSourceType('har');
+                          setTabs(prev =>
+                            prev.map(tab => ({
+                              ...tab,
+                              filter: 'all',
+                            }))
+                          );
+                        }}
+                        className={`px-4 py-2 rounded-r flex items-center gap-2 text-sm ${
+                          logSourceType === 'har'
+                            ? 'bg-blue-500 text-white dark:bg-blue-600'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        HAR Logs
                       </button>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              {/* Tab Content */}
-              {activeTab ? (
-                <div>
                   {/* File Upload */}
-                  <div className="mb-4 flex justify-between items-center">
+                  <div className="mb-4 flex justify-between items-center gap-2">
                     <input
                       type="file"
                       onChange={handleFileUpload}
                       multiple
+                      accept={logSourceType === 'har' ? '.har' : undefined}
                       className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-gray-700 file:text-blue-700 dark:file:text-gray-300 hover:file:bg-blue-100 dark:hover:file:bg-gray-600 mt-4"
                     />
+                    {activeTab.files.length > 0 && (
+                      <button
+                        onClick={clearAllFiles}
+                        className="mt-4 px-3 py-2 rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-800 text-sm whitespace-nowrap"
+                      >
+                        Clear all files
+                      </button>
+                    )}
                   </div>
 
                   {/* File Selector */}
-                  {activeTab.files.length > 0 && (
+                  {activeSourceFiles.length > 0 && (
                     <FileSelector
-                      files={activeTab.files}
-                      selectedFileId={activeTab.selectedFileId}
+                      files={activeSourceFiles}
+                      selectedFileId={effectiveSelectedFileId}
+                      searchScope={activeTab.searchScope}
                       onFileSelect={(id) =>
                         setTabs((prev) =>
                           prev.map((tab) =>
@@ -758,6 +789,9 @@ const LogAnalyzer = () => {
                     isAISearchActive={activeTab.isAISearchActive || false}
                     aiSearchState={activeTab.aiSearchState || 'disabled'}
                     onClearAllSearchTerms={handleClearAllSearchTerms}
+                    showScopeToggle={logSourceType === 'desktop'}
+                    showDateFilter={logSourceType === 'desktop'}
+                    isHarView={logSourceType === 'har'}
                   />
 
                   {/* Statistics */}
@@ -789,22 +823,82 @@ const LogAnalyzer = () => {
 
                   {/* Log View or Pattern View */}
                   {activeTab.viewMode === 'logs' ? (
-                    <div className="space-y-2">
-                      {paginatedLogs.map((log, index) => (
-                        <LogEntry 
-                          key={index} 
-                          log={log} 
-                          conversation={
-                            typeof activeTab.response === 'string' 
-                              ? activeTab.response 
-                              : Array.isArray(activeTab.response) 
-                                ? activeTab.response.join('\n') 
-                                : ''
-                          }
-                          showFileName={activeTab.searchScope === 'all'}
+                    logSourceType === 'har' ? (
+                      <>
+                        <HarTimelineView
+                          logs={filteredAndSortedLogs as any}
+                          selectedIndex={selectedHarIndex}
+                          onSelect={(index) => setSelectedHarIndex((prev) => (prev === index ? null : index))}
                         />
-                      ))}
-                    </div>
+                        <div className="space-y-2 mt-4">
+                          {selectedHarIndex !== null && selectedHarIndex >= 0 && selectedHarIndex < filteredAndSortedLogs.length ? (
+                            <>
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                  Showing 1 request (selected from timeline)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedHarIndex(null)}
+                                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                                >
+                                  Show all
+                                </button>
+                              </div>
+                              <div className="ring-2 ring-blue-500 rounded-lg">
+                                <LogEntry
+                                  log={filteredAndSortedLogs[selectedHarIndex]}
+                                  conversation={
+                                    typeof activeTab.response === 'string'
+                                      ? activeTab.response
+                                      : Array.isArray(activeTab.response)
+                                        ? activeTab.response.join('\n')
+                                        : ''
+                                  }
+                                  showFileName={activeTab.searchScope === 'all'}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            paginatedLogs.map((log, index) => {
+                              const globalIndex = (currentPage - 1) * logsPerPage + index;
+                              return (
+                                <div key={index}>
+                                  <LogEntry
+                                    log={log}
+                                    conversation={
+                                      typeof activeTab.response === 'string'
+                                        ? activeTab.response
+                                        : Array.isArray(activeTab.response)
+                                          ? activeTab.response.join('\n')
+                                          : ''
+                                    }
+                                    showFileName={activeTab.searchScope === 'all'}
+                                  />
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        {paginatedLogs.map((log, index) => (
+                          <LogEntry 
+                            key={index} 
+                            log={log} 
+                            conversation={
+                              typeof activeTab.response === 'string' 
+                                ? activeTab.response 
+                                : Array.isArray(activeTab.response) 
+                                  ? activeTab.response.join('\n') 
+                                  : ''
+                            }
+                            showFileName={activeTab.searchScope === 'all'}
+                          />
+                        ))}
+                      </div>
+                    )
                   ) : (
                     <PatternView patterns={findPatterns(filteredAndSortedLogs)} />
                   )}
