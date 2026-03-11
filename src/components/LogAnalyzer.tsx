@@ -21,6 +21,7 @@ interface Tab {
   files: LogFile[];
   selectedFileId: string | null;
   filter: string | string[];
+  harFilter: string | string[]; // Persisted separately so switching Desktop/HAR keeps each view's choice
   searchTerm: string;
   searchTerms: string[]; // Array of search terms for tag display
   searchScope: 'current' | 'all'; // New property for search scope
@@ -41,6 +42,7 @@ const LogAnalyzer = () => {
     files: [],
     selectedFileId: null,
     filter: 'error',
+    harFilter: 'all',
     searchTerm: '',
     searchTerms: [], // Initialize as empty array
     searchScope: 'all', // Default search scope
@@ -70,6 +72,7 @@ const LogAnalyzer = () => {
       files: [],
       selectedFileId: null,
       filter: 'error',
+      harFilter: 'all',
       searchTerm: '',
       searchTerms: [], // Initialize as empty array
       searchScope: 'all', // Default search scope
@@ -348,6 +351,11 @@ const LogAnalyzer = () => {
   // Get the active tab
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
+  // Use view-specific filter so Desktop and HAR choices persist when switching
+  const activeFilter = logSourceType === 'har'
+    ? (activeTab?.harFilter ?? 'all')
+    : (activeTab?.filter ?? 'error');
+
   const getFilesForCurrentSource = (tab?: Tab) => {
     if (!tab) return [];
     return tab.files.filter(file =>
@@ -371,8 +379,8 @@ const LogAnalyzer = () => {
   // Filter and sort the logs based on the active tab's state
   const filteredAndSortedLogs = currentLogs
     .filter((log) => {
-      // Handle both single filter and multiple filter combinations
-      const filter = activeTab?.filter;
+      // Handle both single filter and multiple filter combinations (use view-specific filter)
+      const filter = activeFilter;
       let levelMatch = true;
 
       if (filter === 'all') {
@@ -695,15 +703,7 @@ const LogAnalyzer = () => {
                 <span>Log Analyser</span>
                 <div className="flex rounded border bg-white dark:bg-gray-900">
                   <button
-                    onClick={() => {
-                      setLogSourceType('desktop');
-                      setTabs(prev =>
-                        prev.map(tab => ({
-                          ...tab,
-                          filter: tab.filter === 'all' ? 'error' : tab.filter,
-                        }))
-                      );
-                    }}
+                    onClick={() => setLogSourceType('desktop')}
                     className={`px-4 py-2 rounded-l flex items-center gap-2 text-sm ${
                       logSourceType === 'desktop'
                         ? 'bg-blue-500 text-white dark:bg-blue-600'
@@ -713,15 +713,7 @@ const LogAnalyzer = () => {
                     Desktop Logs
                   </button>
                   <button
-                    onClick={() => {
-                      setLogSourceType('har');
-                      setTabs(prev =>
-                        prev.map(tab => ({
-                          ...tab,
-                          filter: 'all',
-                        }))
-                      );
-                    }}
+                    onClick={() => setLogSourceType('har')}
                     className={`px-4 py-2 rounded-r flex items-center gap-2 text-sm ${
                       logSourceType === 'har'
                         ? 'bg-blue-500 text-white dark:bg-blue-600'
@@ -829,11 +821,13 @@ const LogAnalyzer = () => {
 
                   {/* Filters */}
                   <LogFilters
-                    filter={activeTab.filter}
+                    filter={activeFilter}
                     setFilter={(filter) =>
                       setTabs((prev) =>
                         prev.map((tab) =>
-                          tab.id === activeTabId ? { ...tab, filter } : tab
+                          tab.id === activeTabId
+                            ? { ...tab, ...(logSourceType === 'har' ? { harFilter: filter } : { filter }) }
+                            : tab
                         )
                       )
                     }
