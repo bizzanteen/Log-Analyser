@@ -5,7 +5,7 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Log Analyzer</title>
+        <title>Log Analyser</title>
       </Head>
       <main className="min-h-screen p-4">
         <LogAnalyzer />

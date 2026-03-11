@@ -54,13 +54,26 @@ export const LogFilters = ({
   // Ensure filter is always an array for easier processing
   const selectedFilters = Array.isArray(filter) ? filter : [filter];
 
+  const HAR_BUCKETS = ['1xx', '2xx', '3xx', '4xx', '5xx', 'other'] as const;
+
   const handleFilterToggle = (filterType: string) => {
-    // In HAR view, treat filters as single-select buckets (All, 1xx, 2xx, 3xx, 4xx, 5xx)
+    // In HAR view, multi-select buckets (like desktop Error/Warn/Info)
     if (isHarView) {
       if (filterType === 'all') {
         setFilter('all');
+        return;
+      }
+      const currentFilters = Array.isArray(filter) ? filter : (filter === 'all' ? [] : [filter]);
+      if (currentFilters.includes(filterType)) {
+        const newFilters = currentFilters.filter(f => f !== filterType);
+        setFilter(newFilters.length === 0 ? 'all' : newFilters);
       } else {
-        setFilter(filterType);
+        const newFilters = [...currentFilters.filter(f => f !== 'all'), filterType];
+        if (newFilters.length === HAR_BUCKETS.length && HAR_BUCKETS.every(b => newFilters.includes(b))) {
+          setFilter('all');
+        } else {
+          setFilter(newFilters);
+        }
       }
       return;
     }
@@ -187,7 +200,7 @@ export const LogFilters = ({
             value={tempSearchInput}
             onChange={(e) => handleSearchInputChange(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            className="flex-1 min-w-[200px] outline-none bg-transparent"
+            className="flex-1 min-w-[200px] outline-none bg-transparent placeholder:italic"
           />
         </div>
         {/* Clear All Button */}
@@ -325,6 +338,12 @@ export const LogFilters = ({
               className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('5xx') ? 'bg-red-500 text-white dark:bg-red-600' : 'bg-gray-100 dark:bg-gray-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
             >
               5xx
+            </button>
+            <button
+              onClick={() => handleFilterToggle('other')}
+              className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('other') ? 'bg-gray-500 text-white dark:bg-gray-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            >
+              No response
             </button>
           </>
         ) : (

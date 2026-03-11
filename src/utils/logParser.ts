@@ -20,6 +20,8 @@ export interface LogFile {
   name: string;
   logs: LogEntry[];
   source?: 'desktop' | 'har';
+  /** Name of the file/archive the user uploaded (e.g. "logs.zip") for display */
+  uploadedAs?: string;
 }
 
 // Parse a HAR file (HTTP Archive) into generic LogEntry items

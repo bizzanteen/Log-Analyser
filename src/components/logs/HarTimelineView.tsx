@@ -1,13 +1,16 @@
 import { LogEntry } from '@/utils/logParser';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 
 interface HarTimelineViewProps {
   logs: (LogEntry & { fileName?: string })[];
   selectedIndex?: number | null;
-  onSelect?: (index: number) => void;
+  /** Call with index to select a bar, or null to deselect (e.g. when clicking elsewhere) */
+  onSelect?: (index: number | null) => void;
+  /** When set and > 0, empty state is due to filter (no matches); otherwise no HAR loaded */
+  unfilteredEntryCount?: number;
 }
 
-export const HarTimelineView = ({ logs, selectedIndex, onSelect }: HarTimelineViewProps) => {
+export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntryCount }: HarTimelineViewProps) => {
   const { items, minStart, totalSpanMs, numLanes } = useMemo(() => {
     type Item = {
       log: LogEntry & { fileName?: string };
@@ -109,11 +112,15 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect }: HarTimelineVi
   };
 
   if (!items.length) {
-    return (
-      <div className="text-sm text-gray-500 dark:text-gray-400 py-4">
-        No HAR entries to display. Load a .har file to see the request flow.
-      </div>
-    );
+    const isFilterEmpty = unfilteredEntryCount != null && unfilteredEntryCount > 0;
+    if (isFilterEmpty) {
+      return (
+        <div className="text-sm text-gray-500 dark:text-gray-400 py-4">
+          No HAR entries to display for the selected filter.
+        </div>
+      );
+    }
+    return null;
   }
 
   const axisTicks = [0, 0.25, 0.5, 0.75, 1].map((pct) => ({
@@ -124,6 +131,18 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect }: HarTimelineVi
   const ROW_HEIGHT = 14;
   const trackHeight = numLanes * ROW_HEIGHT;
   const hasSelection = selectedIndex !== null;
+
+  // Deselect when clicking anywhere on the page except a timeline bar
+  useEffect(() => {
+    if (selectedIndex === null || !onSelect) return;
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-har-timeline-bar]')) return;
+      onSelect(null);
+    };
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => document.removeEventListener('click', handleDocumentClick, true);
+  }, [selectedIndex, onSelect]);
 
   return (
     <div className="space-y-2">
@@ -139,8 +158,12 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect }: HarTimelineVi
         </div>
 
         <div
-          className="relative w-full border-t border-gray-200 dark:border-gray-700"
+          className="relative w-full border-t border-gray-200 dark:border-gray-700 cursor-default"
           style={{ height: `${trackHeight}px` }}
+          onClick={(e) => {
+            if (!(e.target as HTMLElement).closest('button')) onSelect?.(null);
+          }}
+          role="presentation"
         >
           <div className="absolute inset-0 flex pointer-events-none" style={{ height: `${trackHeight}px` }}>
             {axisTicks.slice(0, -1).map(({ pct }) => (
@@ -176,7 +199,11 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect }: HarTimelineVi
                       <button
                         key={index}
                         type="button"
-                        onClick={() => onSelect?.(index)}
+                        data-har-timeline-bar
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect?.(index);
+                        }}
                         className={`absolute h-2.5 rounded transition-all flex-shrink-0 ${colorClass}`}
                         style={{
                           left: `${item.leftPct}%`,

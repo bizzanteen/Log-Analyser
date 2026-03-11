@@ -47,7 +47,7 @@
   },
   "build": {
     "appId": "com.loganalyzer.app",
-    "productName": "Log Analyzer",
+    "productName": "Log Analyser",
     "files": [
       "**/*",
       ".next/**/*"

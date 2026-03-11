@@ -1,11 +1,11 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats, parseHarContent } from '../utils/logParser';
 import { LogEntry } from './logs/LogEntry';
 import { LogFilters } from './logs/LogFilters';
-import { LogStats } from './logs/LogStats';
+import { LogStats, type HarBucketCounts } from './logs/LogStats';
 import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
 import { HarTimelineView } from './logs/HarTimelineView';
@@ -60,6 +60,7 @@ const LogAnalyzer = () => {
   const [copyAllCopied, setCopyAllCopied] = useState(false); // State for copy button animation
   const logsPerPage = 50; // Maximum logs per page
   const [selectedHarIndex, setSelectedHarIndex] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Add a new tab
   const addTab = () => {
@@ -241,6 +242,7 @@ const LogAnalyzer = () => {
     if (!activeTabId) return; // Exit if no active tab
     const fileList = event.target.files;
     if (!fileList) return;
+    const inputEl = event.target;
 
     try {
       const newFiles: LogFile[] = [];
@@ -249,8 +251,27 @@ const LogAnalyzer = () => {
         const file = fileList[i];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
 
-        if (logSourceType === 'desktop' && fileExtension === 'zip') {
-          // Handle .zip files
+        const isZip = fileExtension === 'zip';
+
+        if (logSourceType === 'har' && isZip) {
+          // HAR view: .zip archive containing .har files
+          const zip = new JSZip();
+          const zipContents = await zip.loadAsync(file);
+          for (const filename in zipContents.files) {
+            const entry = zipContents.files[filename];
+            if (entry.dir || !filename.toLowerCase().endsWith('.har')) continue;
+            const fileData = await entry.async('string');
+            const parsedLogs = parseHarContent(fileData);
+            newFiles.push({
+              id: crypto.randomUUID(),
+              name: filename,
+              logs: parsedLogs,
+              source: 'har',
+              uploadedAs: file.name,
+            });
+          }
+        } else if (logSourceType === 'desktop' && isZip) {
+          // Desktop view: .zip archive of log files
           const zip = new JSZip();
           const zipContents = await zip.loadAsync(file);
           for (const filename in zipContents.files) {
@@ -271,10 +292,11 @@ const LogAnalyzer = () => {
               name: filename,
               logs: parsedLogs,
               source: 'desktop',
+              uploadedAs: file.name,
             });
           }
         } else {
-          // Handle normal files
+          // Single file (or non-zip archive)
           const text = await file.text();
 
           let parsedLogs: LogEntryType[] = [];
@@ -299,6 +321,7 @@ const LogAnalyzer = () => {
             name: file.name,
             logs: parsedLogs,
             source: logSourceType === 'har' || fileExtension === 'har' ? 'har' : 'desktop',
+            uploadedAs: file.name,
           });
         }
       }
@@ -314,8 +337,11 @@ const LogAnalyzer = () => {
             : tab
         )
       );
+      // Clear the native input so only our custom label shows file status (avoids "No file chosen" + count)
+      inputEl.value = '';
     } catch (error) {
       console.error('Error processing files:', error);
+      inputEl.value = '';
     }
   };
 
@@ -352,7 +378,8 @@ const LogAnalyzer = () => {
       if (filter === 'all') {
         levelMatch = true;
       } else if (logSourceType === 'har') {
-        const statusCode = Number((log as any).pid);
+        const meta = (log as any).meta;
+        const statusCode = typeof meta?.statusCode === 'number' ? meta.statusCode : Number((log as any).pid);
         let bucket: string = 'other';
         if (!Number.isNaN(statusCode)) {
           if (statusCode >= 500) bucket = '5xx';
@@ -361,7 +388,7 @@ const LogAnalyzer = () => {
           else if (statusCode >= 200) bucket = '2xx';
           else if (statusCode >= 100) bucket = '1xx';
         }
-        levelMatch = filter === bucket;
+        levelMatch = Array.isArray(filter) ? (filter.length === 0 || filter.includes(bucket)) : filter === bucket;
       } else if (Array.isArray(filter)) {
         // Multiple filters selected - log matches if it's any of the selected levels
         levelMatch = filter.length === 0 || filter.includes(log.level);
@@ -401,6 +428,24 @@ const LogAnalyzer = () => {
 
   // Calculate statistics for the logs
   const stats = calculateLogStats(currentLogs, filteredAndSortedLogs);
+
+  // HAR view: bucket counts by status (1xx, 2xx, …) for the stats summary
+  const harBuckets: HarBucketCounts | undefined = React.useMemo(() => {
+    if (logSourceType !== 'har') return undefined;
+    const buckets: HarBucketCounts = { '1xx': 0, '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, other: 0 };
+    for (const log of filteredAndSortedLogs) {
+      const meta = (log as any).meta;
+      const statusCode = typeof meta?.statusCode === 'number' ? meta.statusCode : Number((log as any).pid);
+      if (Number.isNaN(statusCode) || statusCode < 100 || statusCode >= 600) buckets.other++;
+      else if (statusCode >= 500) buckets['5xx']++;
+      else if (statusCode >= 400) buckets['4xx']++;
+      else if (statusCode >= 300) buckets['3xx']++;
+      else if (statusCode >= 200) buckets['2xx']++;
+      else if (statusCode >= 100) buckets['1xx']++;
+      else buckets.other++;
+    }
+    return buckets;
+  }, [logSourceType, filteredAndSortedLogs]);
 
   // Calculate the logs to display for the current page
   const paginatedLogs = filteredAndSortedLogs.slice(
@@ -465,7 +510,8 @@ const LogAnalyzer = () => {
       if (filter === 'all') {
         levelMatch = true;
       } else if (logSourceType === 'har') {
-        const statusCode = Number((log as any).pid);
+        const meta = (log as any).meta;
+        const statusCode = typeof meta?.statusCode === 'number' ? meta.statusCode : Number((log as any).pid);
         let bucket: string = 'other';
         if (!Number.isNaN(statusCode)) {
           if (statusCode >= 500) bucket = '5xx';
@@ -474,7 +520,7 @@ const LogAnalyzer = () => {
           else if (statusCode >= 200) bucket = '2xx';
           else if (statusCode >= 100) bucket = '1xx';
         }
-        levelMatch = filter === bucket;
+        levelMatch = Array.isArray(filter) ? (filter.length === 0 || filter.includes(bucket)) : filter === bucket;
       } else if (Array.isArray(filter)) {
         // Multiple filters selected - log matches if it's any of the selected levels
         levelMatch = filter.length === 0 || filter.includes(log.level);
@@ -526,15 +572,28 @@ const LogAnalyzer = () => {
     }
   };
 
-  // Clear all log files for the active tab
+  // Clear all log files for the active tab (current view only: desktop or HAR)
   const clearAllFiles = () => {
     if (!activeTabId) return;
     setTabs((prev) =>
-      prev.map((tab) =>
-        tab.id === activeTabId
-          ? { ...tab, files: [], selectedFileId: null }
-          : tab
-      )
+      prev.map((tab) => {
+        if (tab.id !== activeTabId) return tab;
+        const keepFiles = tab.files.filter((file) =>
+          logSourceType === 'har'
+            ? (file.source ?? 'desktop') !== 'har'
+            : file.source === 'har'
+        );
+        const keepIds = new Set(keepFiles.map((f) => f.id));
+        const newSelectedId =
+          tab.selectedFileId && keepIds.has(tab.selectedFileId)
+            ? tab.selectedFileId
+            : keepFiles[0]?.id ?? null;
+        return {
+          ...tab,
+          files: keepFiles,
+          selectedFileId: newSelectedId,
+        };
+      })
     );
   };
 
@@ -632,8 +691,46 @@ const LogAnalyzer = () => {
         <div className="max-w-6xl mx-auto">
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <span>Log Analyzer</span>
+              <CardTitle className="flex items-center gap-4 flex-wrap">
+                <span>Log Analyser</span>
+                <div className="flex rounded border bg-white dark:bg-gray-900">
+                  <button
+                    onClick={() => {
+                      setLogSourceType('desktop');
+                      setTabs(prev =>
+                        prev.map(tab => ({
+                          ...tab,
+                          filter: tab.filter === 'all' ? 'error' : tab.filter,
+                        }))
+                      );
+                    }}
+                    className={`px-4 py-2 rounded-l flex items-center gap-2 text-sm ${
+                      logSourceType === 'desktop'
+                        ? 'bg-blue-500 text-white dark:bg-blue-600'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    Desktop Logs
+                  </button>
+                  <button
+                    onClick={() => {
+                      setLogSourceType('har');
+                      setTabs(prev =>
+                        prev.map(tab => ({
+                          ...tab,
+                          filter: 'all',
+                        }))
+                      );
+                    }}
+                    className={`px-4 py-2 rounded-r flex items-center gap-2 text-sm ${
+                      logSourceType === 'har'
+                        ? 'bg-blue-500 text-white dark:bg-blue-600'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    HAR Logs
+                  </button>
+                </div>
                 <div className="ml-auto" />
                 <ThemeToggle />
               </CardTitle>
@@ -641,59 +738,56 @@ const LogAnalyzer = () => {
             <CardContent>
               {activeTab ? (
                 <div>
-                  {/* Log source type toggle */}
-                  <div className="mb-4 flex items-center gap-2">
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Source:</span>
-                    <div className="flex rounded border bg-white dark:bg-gray-900">
+                  {/* File Upload - custom button + single status label (no native "No file chosen") */}
+                  <div className="mb-4 flex justify-between items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {logSourceType === 'har' ? (
+                        <input
+                          key="har"
+                          ref={fileInputRef}
+                          type="file"
+                          onChange={handleFileUpload}
+                          multiple
+                          accept=".har,.zip"
+                          className="sr-only"
+                          aria-label="Choose HAR or archive files"
+                        />
+                      ) : (
+                        <input
+                          key="desktop"
+                          ref={fileInputRef}
+                          type="file"
+                          onChange={handleFileUpload}
+                          multiple
+                          accept=".log,.zip,.rar,.tar,.gz,.7z,.tar.gz"
+                          className="sr-only"
+                          aria-label="Choose log files"
+                        />
+                      )}
                       <button
-                        onClick={() => {
-                          setLogSourceType('desktop');
-                          setTabs(prev =>
-                            prev.map(tab => ({
-                              ...tab,
-                              filter: tab.filter === 'all' ? 'error' : tab.filter,
-                            }))
-                          );
-                        }}
-                        className={`px-4 py-2 rounded-l flex items-center gap-2 text-sm ${
-                          logSourceType === 'desktop'
-                            ? 'bg-blue-500 text-white dark:bg-blue-600'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="mt-4 px-4 py-2 rounded-full border-0 text-sm font-semibold bg-blue-50 dark:bg-gray-700 text-blue-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-gray-600"
                       >
-                        Desktop Logs
+                        Choose files
                       </button>
-                      <button
-                        onClick={() => {
-                          setLogSourceType('har');
-                          setTabs(prev =>
-                            prev.map(tab => ({
-                              ...tab,
-                              filter: 'all',
-                            }))
-                          );
-                        }}
-                        className={`px-4 py-2 rounded-r flex items-center gap-2 text-sm ${
-                          logSourceType === 'har'
-                            ? 'bg-blue-500 text-white dark:bg-blue-600'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        HAR Logs
-                      </button>
+                      <span className="text-sm text-gray-500 dark:text-gray-400 mt-4 truncate">
+                        {activeSourceFiles.length === 0
+                          ? 'No file chosen'
+                          : (() => {
+                              const first = activeSourceFiles[0];
+                              const uploadedAs = first?.uploadedAs ?? first?.name;
+                              const allSameUpload =
+                                activeSourceFiles.length > 1 &&
+                                activeSourceFiles.every((f) => (f.uploadedAs ?? f.name) === uploadedAs);
+                              // Show archive name when one upload (or single file), else "N files chosen"
+                              if (activeSourceFiles.length === 1) return first?.uploadedAs ?? first?.name ?? uploadedAs;
+                              if (allSameUpload) return uploadedAs;
+                              return `${activeSourceFiles.length} files chosen`;
+                            })()}
+                      </span>
                     </div>
-                  </div>
-
-                  {/* File Upload */}
-                  <div className="mb-4 flex justify-between items-center gap-2">
-                    <input
-                      type="file"
-                      onChange={handleFileUpload}
-                      multiple
-                      accept={logSourceType === 'har' ? '.har' : undefined}
-                      className="block w-full text-sm text-gray-500 dark:text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 dark:file:bg-gray-700 file:text-blue-700 dark:file:text-gray-300 hover:file:bg-blue-100 dark:hover:file:bg-gray-600 mt-4"
-                    />
-                    {activeTab.files.length > 0 && (
+                    {activeSourceFiles.length > 0 && (
                       <button
                         onClick={clearAllFiles}
                         className="mt-4 px-3 py-2 rounded bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-800 text-sm whitespace-nowrap"
@@ -794,14 +888,15 @@ const LogAnalyzer = () => {
                     isHarView={logSourceType === 'har'}
                   />
 
-                  {/* Statistics */}
-                  <LogStats stats={stats} />
-
-                  {/* Log count and copy button */}
-                  <div className="flex items-center justify-between mt-4 mb-2 min-h-[36px]">
-                    <div className="flex items-center gap-4">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Showing {Math.min((currentPage - 1) * logsPerPage + 1, filteredAndSortedLogs.length)} - {Math.min(currentPage * logsPerPage, filteredAndSortedLogs.length)} of {filteredAndSortedLogs.length} logs
+                  {/* Statistics and log count on one line */}
+                  <div className="flex items-center justify-between mt-4 mb-2 min-h-[36px] flex-wrap gap-x-4 gap-y-1">
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <span className="text-sm text-gray-600 dark:text-gray-400 inline-flex items-center gap-4">
+                        <LogStats stats={stats} harBuckets={harBuckets} />
+                        <span>
+                          Showing {Math.min((currentPage - 1) * logsPerPage + 1, filteredAndSortedLogs.length)} – {Math.min(currentPage * logsPerPage, filteredAndSortedLogs.length)} of {filteredAndSortedLogs.length} logs
+                          {stats.filtered < stats.total && ` (of ${stats.total} total)`}
+                        </span>
                       </span>
                       {/* Copy All Button - Only show when there are search terms */}
                       {activeTab.searchTerms.length > 0 && (
@@ -828,7 +923,8 @@ const LogAnalyzer = () => {
                         <HarTimelineView
                           logs={filteredAndSortedLogs as any}
                           selectedIndex={selectedHarIndex}
-                          onSelect={(index) => setSelectedHarIndex((prev) => (prev === index ? null : index))}
+                          onSelect={(indexOrNull) => setSelectedHarIndex(indexOrNull === null ? null : (prev) => (prev === indexOrNull ? null : indexOrNull))}
+                          unfilteredEntryCount={logSourceType === 'har' ? currentLogs.length : undefined}
                         />
                         <div className="space-y-2 mt-4">
                           {selectedHarIndex !== null && selectedHarIndex >= 0 && selectedHarIndex < filteredAndSortedLogs.length ? (
