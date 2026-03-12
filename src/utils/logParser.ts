@@ -36,9 +36,8 @@ export const parseHarContent = (content: string): LogEntry[] => {
     }
 
     return entries.map((entry: any, index: number): LogEntry => {
-      const started = entry.startedDateTime
-        ? Date.parse(entry.startedDateTime)
-        : Date.now();
+      const parsed = entry.startedDateTime ? Date.parse(entry.startedDateTime) : NaN;
+      const started = Number.isFinite(parsed) ? parsed : Date.now();
 
       const request = entry.request ?? {};
       const response = entry.response ?? {};
@@ -81,9 +80,10 @@ export const parseHarContent = (content: string): LogEntry[] => {
           ? ` | ${sizeBytes} bytes`
           : '';
 
+      const safeStarted = Number.isFinite(started) ? started : Date.now();
       return {
         pid: status ? String(status) : '-',
-        timestamp: Number.isFinite(started) ? started : Date.now(),
+        timestamp: safeStarted,
         context: url,
         level,
         message: `${method} ${url} - ${status} ${statusText} (${timeMs}ms${sizePart}${timingSummary})`,
@@ -92,7 +92,7 @@ export const parseHarContent = (content: string): LogEntry[] => {
           method,
           url,
           timeMs,
-          startedAt: started,
+          startedAt: safeStarted,
         },
       };
     });

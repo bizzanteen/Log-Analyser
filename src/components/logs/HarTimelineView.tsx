@@ -22,11 +22,12 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntry
       leftPct: number;
       widthPct: number;
     };
-    if (!logs.length) {
+    const safeLogs = Array.isArray(logs) ? logs : [];
+    if (!safeLogs.length) {
       return { items: [] as Item[], minStart: 0, totalSpanMs: 1, numLanes: 0 };
     }
 
-    const list = logs.map((log) => {
+    const list = safeLogs.map((log) => {
       const meta = (log.meta || {}) as {
         statusCode?: number;
         method?: string;
@@ -44,7 +45,8 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntry
               return m ? parseInt(m[1], 10) : 0;
             })();
 
-      const startedAt = typeof meta.startedAt === 'number' ? meta.startedAt : log.timestamp;
+      const rawStarted = typeof meta.startedAt === 'number' ? meta.startedAt : log.timestamp;
+      const startedAt = Number.isFinite(rawStarted) ? rawStarted : 0;
 
       let bucket: string = 'other';
       if (!Number.isNaN(statusCode)) {
@@ -60,7 +62,7 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntry
 
     const minStart = Math.min(...list.map((i) => i.startedAt));
     const maxEnd = Math.max(...list.map((i) => i.startedAt + i.timeMs));
-    const totalSpanMs = Math.max(maxEnd - minStart, 1);
+    const totalSpanMs = Number.isFinite(minStart) && Number.isFinite(maxEnd) ? Math.max(maxEnd - minStart, 1) : 1;
 
     const sortedByStart = [...list]
       .map((item, origIndex) => ({ item, origIndex }))
@@ -83,9 +85,21 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntry
       widthPct: Math.max((item.timeMs / totalSpanMs) * 100, 0.5),
     }));
 
-    const numLanes = Math.max(...laneByOrigIndex, 0) + 1;
+    const numLanes = Math.max(0, ...laneByOrigIndex.filter(Number.isFinite)) + 1;
     return { items, minStart, totalSpanMs, numLanes };
   }, [logs]);
+
+  // Deselect when clicking anywhere on the page except a timeline bar (must be before any early return to satisfy Rules of Hooks)
+  useEffect(() => {
+    if (selectedIndex === null || !onSelect) return;
+    const handleDocumentClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-har-timeline-bar]')) return;
+      onSelect(null);
+    };
+    document.addEventListener('click', handleDocumentClick, true);
+    return () => document.removeEventListener('click', handleDocumentClick, true);
+  }, [selectedIndex, onSelect]);
 
   // Normal (dimmed when another bar is selected)
   const getColor = (bucket: string) => {
@@ -131,18 +145,6 @@ export const HarTimelineView = ({ logs, selectedIndex, onSelect, unfilteredEntry
   const ROW_HEIGHT = 14;
   const trackHeight = numLanes * ROW_HEIGHT;
   const hasSelection = selectedIndex !== null;
-
-  // Deselect when clicking anywhere on the page except a timeline bar
-  useEffect(() => {
-    if (selectedIndex === null || !onSelect) return;
-    const handleDocumentClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('[data-har-timeline-bar]')) return;
-      onSelect(null);
-    };
-    document.addEventListener('click', handleDocumentClick, true);
-    return () => document.removeEventListener('click', handleDocumentClick, true);
-  }, [selectedIndex, onSelect]);
 
   return (
     <div className="space-y-2">
