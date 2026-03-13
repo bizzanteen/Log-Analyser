@@ -1,4 +1,4 @@
-import { Search, Globe, AlertTriangle, AlertCircle, ArrowUpDown, Info, X, File, Files, Calendar } from 'lucide-react';
+import { Search, Globe, AlertTriangle, AlertCircle, ArrowUpDown, Info, X, File, Files, Calendar, Layers } from 'lucide-react';
 import { LogEntry } from '@/utils/logParser';
 import { useState } from 'react';
 
@@ -24,6 +24,7 @@ interface LogFiltersProps {
   isAISearchActive?: boolean; // Track if AI search is currently active
   aiSearchState?: 'disabled' | 'loading' | 'ready'; // Track AI search button state
   onClearAllSearchTerms?: () => void; // Function to clear all search terms
+  onExtractWorkspaceIds?: () => void; // Desktop only: open modal to show extracted workspace IDs
 }
 
 export const LogFilters = ({
@@ -45,6 +46,7 @@ export const LogFilters = ({
   isAISearchActive = false,
   aiSearchState = 'disabled',
   onClearAllSearchTerms,
+  onExtractWorkspaceIds,
   showScopeToggle = true,
   showDateFilter = true,
   isHarView = false,
@@ -216,91 +218,101 @@ export const LogFilters = ({
         )}
       </div>
 
-      {/* Date Filter */}
+      {/* Date Filter + Extract button aligned with filter row (Desktop only) */}
       {showDateFilter && (
-        <div className="flex items-center gap-2 relative">
-          <Calendar className="w-4 h-4 text-gray-500" />
-          <div className="flex items-center gap-2 flex-1">
-            <input
-              type="date"
-              value={dateRange?.start || ''}
-              onChange={(e) => handleStartDateChange(e.target.value)}
-              className="px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm"
-              placeholder="Start date"
-              title="Select start date"
-            />
-            <span className="text-gray-500">to</span>
-            <input
-              type="date"
-              value={dateRange?.end || ''}
-              min={dateRange?.start || ''}
-              onChange={(e) => handleEndDateChange(e.target.value)}
-              className={`px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm ${
-                dateRange?.start ? 'border-blue-300 dark:border-blue-600' : ''
-              }`}
-              placeholder="End date"
-              title={dateRange?.start ? `Select end date (must be after ${new Date(dateRange.start).toLocaleDateString()})` : "Select end date"}
-            />
-            {(dateRange?.start || dateRange?.end) && (
-              <button
-                onClick={clearDateRange}
-                className="px-2 py-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                title="Clear date filter"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 items-center">
+          {/* Row 1 col 1: date filter */}
+          <div className="flex items-center gap-2 min-w-0">
+            <Calendar className="w-4 h-4 text-gray-500 shrink-0" />
+            <div className="flex items-center gap-2 min-w-0">
+              <input
+                type="date"
+                value={dateRange?.start || ''}
+                onChange={(e) => handleStartDateChange(e.target.value)}
+                className="px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm"
+                placeholder="Start date"
+                title="Select start date"
+              />
+              <span className="text-gray-500">to</span>
+              <input
+                type="date"
+                value={dateRange?.end || ''}
+                min={dateRange?.start || ''}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                className={`px-3 py-2 border rounded bg-white dark:bg-gray-900 text-sm ${
+                  dateRange?.start ? 'border-blue-300 dark:border-blue-600' : ''
+                }`}
+                placeholder="End date"
+                title={dateRange?.start ? `Select end date (must be after ${new Date(dateRange.start).toLocaleDateString()})` : "Select end date"}
+              />
+              {(dateRange?.start || dateRange?.end) && (
+                <button
+                  onClick={clearDateRange}
+                  className="px-2 py-2 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  title="Clear date filter"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Controls Row */}
-      <div className="flex gap-2 items-center">
-        {/* Sort Button */}
-        <button
-          onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
-          className="px-4 py-2 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600"
-          title="Sort by date"
-        >
-          <ArrowUpDown className="w-4 h-4" />
-          {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
-        </button>
-
-
-
-        {/* Search Scope Toggle (optional, e.g. hidden for HAR view) */}
-        {showScopeToggle && (
-          <>
-            <div className="flex rounded border bg-white dark:bg-gray-900">
+          {/* Row 1 col 2: Extract button (aligns with All filter below) */}
+          {onExtractWorkspaceIds && (
+            <div className="flex justify-start">
               <button
-                onClick={() => setSearchScope('all')}
-                className={`px-4 py-2 rounded-l flex items-center gap-2 ${
-                  searchScope === 'all' 
-                    ? 'bg-blue-500 text-white dark:bg-blue-600' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+                type="button"
+                onClick={onExtractWorkspaceIds}
+                className="px-4 py-2 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 whitespace-nowrap"
+                title="Extract workspace IDs from logs"
               >
-                <Files className="w-4 h-4" />
-                All Files
-              </button>
-              <button
-                onClick={() => setSearchScope('current')}
-                className={`px-4 py-2 rounded-r flex items-center gap-2 ${
-                  searchScope === 'current' 
-                    ? 'bg-blue-500 text-white dark:bg-blue-600' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                <File className="w-4 h-4" />
-                Current File
+                <Layers className="w-4 h-4" />
+                Extract workspace IDs
               </button>
             </div>
+          )}
 
-            <div className="w-px h-6 bg-gray-300 mx-2" />
-          </>
-        )}
-
-        {/* Filter Buttons */}
+          {/* Row 2 col 1: Sort + Scope (aligns with date block above) */}
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+              className="px-4 py-2 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600"
+              title="Sort by date"
+            >
+              <ArrowUpDown className="w-4 h-4" />
+              {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
+            </button>
+            {showScopeToggle && (
+              <>
+                <div className="flex rounded border bg-white dark:bg-gray-900">
+                  <button
+                    onClick={() => setSearchScope('all')}
+                    className={`px-4 py-2 rounded-l flex items-center gap-2 ${
+                      searchScope === 'all' 
+                        ? 'bg-blue-500 text-white dark:bg-blue-600' 
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Files className="w-4 h-4" />
+                    All Files
+                  </button>
+                  <button
+                    onClick={() => setSearchScope('current')}
+                    className={`px-4 py-2 rounded-r flex items-center gap-2 ${
+                      searchScope === 'current' 
+                        ? 'bg-blue-500 text-white dark:bg-blue-600' 
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <File className="w-4 h-4" />
+                    Current File
+                  </button>
+                </div>
+                <div className="w-px h-6 bg-gray-300 mx-2" />
+              </>
+            )}
+          </div>
+          {/* Row 2 col 2: Filter buttons (aligns with Extract button above) */}
+          <div className="flex gap-2 items-center flex-wrap">
         {isHarView ? (
           <>
             <button
@@ -374,7 +386,75 @@ export const LogFilters = ({
             </button>
           </>
         )}
+          </div>
+        </div>
+      )}
+
+      {/* Controls Row when no date filter (HAR view) */}
+      {!showDateFilter && (
+      <div className="flex gap-2 items-center flex-wrap">
+        <button
+          onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+          className="px-4 py-2 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600"
+          title="Sort by date"
+        >
+          <ArrowUpDown className="w-4 h-4" />
+          {sortDirection === 'desc' ? 'Newest First' : 'Oldest First'}
+        </button>
+        {showScopeToggle && (
+          <>
+            <div className="flex rounded border bg-white dark:bg-gray-900">
+              <button
+                onClick={() => setSearchScope('all')}
+                className={`px-4 py-2 rounded-l flex items-center gap-2 ${
+                  searchScope === 'all' 
+                    ? 'bg-blue-500 text-white dark:bg-blue-600' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Files className="w-4 h-4" />
+                All Files
+              </button>
+              <button
+                onClick={() => setSearchScope('current')}
+                className={`px-4 py-2 rounded-r flex items-center gap-2 ${
+                  searchScope === 'current' 
+                    ? 'bg-blue-500 text-white dark:bg-blue-600' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <File className="w-4 h-4" />
+                Current File
+              </button>
+            </div>
+            <div className="w-px h-6 bg-gray-300 mx-2" />
+          </>
+        )}
+        {isHarView ? (
+          <>
+            <button
+              onClick={() => handleFilterToggle('all')}
+              className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('all') ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}
+            >
+              <Globe className="w-4 h-4" /> All
+            </button>
+            <button onClick={() => handleFilterToggle('1xx')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('1xx') ? 'bg-blue-500 text-white dark:bg-blue-600' : 'bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>1xx</button>
+            <button onClick={() => handleFilterToggle('2xx')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('2xx') ? 'bg-green-500 text-white dark:bg-green-600' : 'bg-gray-100 dark:bg-gray-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>2xx</button>
+            <button onClick={() => handleFilterToggle('3xx')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('3xx') ? 'bg-amber-500 text-white dark:bg-amber-600' : 'bg-gray-100 dark:bg-gray-700 text-amber-700 dark:text-amber-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>3xx</button>
+            <button onClick={() => handleFilterToggle('4xx')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('4xx') ? 'bg-orange-500 text-white dark:bg-orange-600' : 'bg-gray-100 dark:bg-gray-700 text-orange-700 dark:text-orange-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>4xx</button>
+            <button onClick={() => handleFilterToggle('5xx')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('5xx') ? 'bg-red-500 text-white dark:bg-red-600' : 'bg-gray-100 dark:bg-gray-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>5xx</button>
+            <button onClick={() => handleFilterToggle('other')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('other') ? 'bg-gray-500 text-white dark:bg-gray-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}>No response</button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => handleFilterToggle('all')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('all') ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-gray-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}><Globe className="w-4 h-4" /> All</button>
+            <button onClick={() => handleFilterToggle('error')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('error') ? 'bg-red-500 text-white dark:bg-red-700' : 'bg-gray-100 dark:bg-gray-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}><AlertCircle className="w-4 h-4" /> Errors</button>
+            <button onClick={() => handleFilterToggle('warn')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('warn') ? 'bg-yellow-500 text-white dark:bg-yellow-700' : 'bg-gray-100 dark:bg-gray-700 text-yellow-700 dark:text-yellow-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}><AlertTriangle className="w-4 h-4" /> Warnings</button>
+            <button onClick={() => handleFilterToggle('info')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-blue-500 text-white dark:bg-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-blue-700 dark:text-blue-300 hover:bg-gray-200 dark:hover:bg-gray-600'}`}><Info className="w-4 h-4" /> Info</button>
+          </>
+        )}
       </div>
+      )}
     </div>
   );
 };
