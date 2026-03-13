@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats, parseHarContent } from '../utils/logParser';
+import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats, parseHarContent, extractWorkspaceIds, type ExtractedIds } from '../utils/logParser';
 import { LogEntry } from './logs/LogEntry';
 import { LogFilters } from './logs/LogFilters';
 import { LogStats, type HarBucketCounts } from './logs/LogStats';
@@ -10,9 +10,10 @@ import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
 import { HarTimelineView } from './logs/HarTimelineView';
 import { findPatterns } from '../utils/patternMatcher';
-import { Plus, X, Copy, Check } from 'lucide-react';
+import { Plus, X, Copy, Check, Filter } from 'lucide-react';
 import JSZip from 'jszip';
 import { ThemeToggle } from "./theme-toggle";
+import { Modal } from '@/components/ui/modal';
 import axios from 'axios';
 
 interface Tab {
@@ -63,6 +64,11 @@ const LogAnalyzer = () => {
   const logsPerPage = 50; // Maximum logs per page
   const [selectedHarIndex, setSelectedHarIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showExtractIdsModal, setShowExtractIdsModal] = useState(false);
+  const [extractedIds, setExtractedIds] = useState<ExtractedIds | null>(null);
+  const [extractedIdsErrorsOnly, setExtractedIdsErrorsOnly] = useState<ExtractedIds | null>(null);
+  const [extractIdsErrorsOnlyFilter, setExtractIdsErrorsOnlyFilter] = useState(false);
+  const [extractIdsCopyWorkspace, setExtractIdsCopyWorkspace] = useState(false);
 
   // Add a new tab
   const addTab = () => {
@@ -375,6 +381,32 @@ const LogAnalyzer = () => {
   const currentLogs = activeTab?.searchScope === 'all' 
     ? activeSourceFiles.flatMap(file => file.logs.map(log => ({ ...log, fileName: file.name })))
     : (activeSourceFiles.find((file) => file.id === effectiveSelectedFileId)?.logs || []);
+
+  const handleExtractWorkspaceIds = () => {
+    if (!activeTab) return;
+    const logsToScan = activeTab.searchScope === 'all'
+      ? activeSourceFiles.flatMap(file => file.logs)
+      : (activeSourceFiles.find((file) => file.id === effectiveSelectedFileId)?.logs || []);
+    setExtractedIds(extractWorkspaceIds(logsToScan));
+    setExtractedIdsErrorsOnly(extractWorkspaceIds(logsToScan, { errorsOnly: true }));
+    setExtractIdsErrorsOnlyFilter(false);
+    setShowExtractIdsModal(true);
+  };
+
+  const handleFilterByWorkspaceId = (id: string) => {
+    if (!activeTabId) return;
+    const isCurrentlyFiltered = activeTab?.searchTerms?.includes(id);
+    setTabs((prev) =>
+      prev.map((tab) => {
+        if (tab.id !== activeTabId) return tab;
+        const terms = tab.searchTerms || [];
+        const newTerms = isCurrentlyFiltered
+          ? terms.filter((t) => t !== id)
+          : [...terms, id];
+        return { ...tab, searchTerms: newTerms };
+      })
+    );
+  };
 
   // Filter and sort the logs based on the active tab's state
   const filteredAndSortedLogs = currentLogs
@@ -877,6 +909,7 @@ const LogAnalyzer = () => {
                     isAISearchActive={activeTab.isAISearchActive || false}
                     aiSearchState={activeTab.aiSearchState || 'disabled'}
                     onClearAllSearchTerms={handleClearAllSearchTerms}
+                    onExtractWorkspaceIds={logSourceType === 'desktop' ? handleExtractWorkspaceIds : undefined}
                     showScopeToggle={logSourceType === 'desktop'}
                     showDateFilter={logSourceType === 'desktop'}
                     isHarView={logSourceType === 'har'}
@@ -1105,6 +1138,97 @@ const LogAnalyzer = () => {
           </Card>
         </div>
       </div>
+
+      {/* Extract workspace IDs modal (Desktop Logs only) */}
+      {showExtractIdsModal && extractedIds && (
+        <Modal onClose={() => { setShowExtractIdsModal(false); setExtractIdsCopyWorkspace(false); }}>
+          <div className="flex flex-col gap-4 w-fit">
+            <div className="flex items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-700 pb-2">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Workspace IDs</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 italic mt-0.5">Click on any ID to open in Support Dashboard</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400 italic mt-0.5">Click filter icon to return logs for this workspace</p>
+                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={extractIdsErrorsOnlyFilter}
+                    onChange={(e) => setExtractIdsErrorsOnlyFilter(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-gray-600"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Errors only</span>
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExtractIdsModal(false)}
+                className="p-1.5 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {(() => {
+              const displayedIds = extractIdsErrorsOnlyFilter && extractedIdsErrorsOnly
+                ? extractedIdsErrorsOnly
+                : extractedIds;
+              const countLabel = extractIdsErrorsOnlyFilter
+                ? `Workspace IDs (${displayedIds.workspaceIds.length} of ${extractedIds.workspaceIds.length})`
+                : `Workspace IDs (${displayedIds.workspaceIds.length})`;
+              return (
+            <div className="flex flex-col gap-2 w-fit min-w-[22rem]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{countLabel}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const text = displayedIds.workspaceIds.join('\n');
+                    await navigator.clipboard.writeText(text);
+                    setExtractIdsCopyWorkspace(true);
+                    setTimeout(() => setExtractIdsCopyWorkspace(false), 2000);
+                  }}
+                  className="px-2 py-1 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-1.5 text-sm hover:bg-gray-200 dark:hover:bg-gray-600 shrink-0"
+                >
+                  {extractIdsCopyWorkspace ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  Copy all
+                </button>
+              </div>
+              <div className="p-3 rounded bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-xs overflow-auto max-h-64 font-mono space-y-1 w-fit min-w-[22rem]">
+                {displayedIds.workspaceIds.length ? displayedIds.workspaceIds.map((id) => {
+                  const isFiltered = activeTab?.searchTerms?.includes(id);
+                  return (
+                  <div key={id} className="flex items-center gap-2 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => handleFilterByWorkspaceId(id)}
+                      className={`shrink-0 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 ${
+                        isFiltered
+                          ? 'text-blue-600 dark:text-blue-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                      }`}
+                      title={isFiltered ? 'Remove from search' : 'Filter logs by this workspace ID'}
+                      aria-label={isFiltered ? 'Remove from search' : 'Filter by this ID'}
+                    >
+                      <Filter className={`w-4 h-4 ${isFiltered ? 'fill-current' : ''}`} strokeWidth={isFiltered ? 2.5 : 2} />
+                    </button>
+                    <a
+                      href={`https://support.postmanlabs.com/workspaces/${id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`text-blue-600 dark:text-blue-400 hover:underline break-all min-w-0 ${isFiltered ? 'font-bold' : ''}`}
+                      title="Open in Support Dashboard"
+                    >
+                      {id}
+                    </a>
+                  </div>
+                  );
+                }) : '(none found)'}
+              </div>
+            </div>
+              );
+            })()}
+          </div>
+        </Modal>
+      )}
     </>
   );
 };

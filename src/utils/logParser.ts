@@ -129,3 +129,51 @@ export const calculateLogStats = (allLogs: LogEntry[], filteredLogs: LogEntry[])
     filtered: filteredLogs.length
   };
 };
+
+const UUID_REGEX = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
+
+export interface ExtractedIds {
+  workspaceIds: string[];
+}
+
+export interface ExtractIdsOptions {
+  /** When true, only include IDs that appear in log entries with level === 'error'. */
+  errorsOnly?: boolean;
+}
+
+/** Character window before a UUID to look for "workspace" context. */
+const UUID_CONTEXT_WINDOW = 100;
+
+/**
+ * Scans log entries and extracts workspace IDs (UUIDs that appear in context of
+ * "workspace" in message/context). Classification uses the text *immediately
+ * before* each UUID so an ID is only added when "workspace" appears before it
+ * (e.g. "workspaceId: uuid" or "workspace uuid").
+ * Returns only unique IDs (deduplicated via Set).
+ * @param options.errorsOnly - When true, only consider error-level logs.
+ */
+export const extractWorkspaceIds = (
+  logs: LogEntry[],
+  options?: ExtractIdsOptions
+): ExtractedIds => {
+  const workspaceSet = new Set<string>();
+  const toScan = options?.errorsOnly ? logs.filter((log) => log.level === 'error') : logs;
+
+  for (const log of toScan) {
+    const text = `${log.context} ${log.message}`;
+    const lower = text.toLowerCase();
+
+    for (const m of text.matchAll(UUID_REGEX)) {
+      const id = m[0];
+      const start = m.index ?? 0;
+      const contextStart = Math.max(0, start - UUID_CONTEXT_WINDOW);
+      const before = lower.slice(contextStart, start);
+
+      if (before.includes('workspace')) workspaceSet.add(id);
+    }
+  }
+
+  return {
+    workspaceIds: [...workspaceSet].sort(),
+  };
+};

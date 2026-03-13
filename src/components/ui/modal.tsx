@@ -25,7 +25,7 @@ export const Modal: React.FC<ModalProps> = ({ children, onClose }) => {
       onKeyDown={handleKeyDown}
       tabIndex={-1} // Make div focusable for keydown events
     >
-      <div className="bg-white dark:bg-gray-800 p-4 rounded shadow-lg max-w-lg w-full overflow-y-auto max-h-[80vh]">
+      <div className="bg-white dark:bg-gray-800 p-4 rounded shadow-lg w-fit max-w-[90vw] overflow-y-auto max-h-[80vh]">
         {children}
       </div>
     </div>
