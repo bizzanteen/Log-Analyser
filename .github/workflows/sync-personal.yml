@@ -1,0 +1,19 @@
+name: Sync to personal GitHub
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to bizzanteen/Log-Analyser
+        run: |
+          git remote add personal https://bizzanteen:${{ secrets.PERSONAL_GITHUB_TOKEN }}@github.com/bizzanteen/Log-Analyser.git
+          git push personal main --force
