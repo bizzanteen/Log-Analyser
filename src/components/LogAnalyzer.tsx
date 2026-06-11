@@ -1,15 +1,16 @@
 'use client'
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { LogEntry as LogEntryType, LogFile, parseLogLine, calculateLogStats, parseHarContent, extractWorkspaceIds, type ExtractedIds } from '../utils/logParser';
+import { LogEntry as LogEntryType, LogFile, calculateLogStats, parseHarContent, extractWorkspaceIds, type ExtractedIds } from '../utils/logParser';
 import { LogEntry } from './logs/LogEntry';
 import { LogFilters } from './logs/LogFilters';
 import { LogStats, type HarBucketCounts } from './logs/LogStats';
 import { FileSelector } from './logs/FileSelector';
 import { PatternView } from './logs/PatternView';
 import { HarTimelineView } from './logs/HarTimelineView';
-import { findPatterns } from '../utils/patternMatcher';
+import type { PatternGroup } from '../utils/patternMatcher';
+import { parseLinesAsync, findPatternsAsync } from '../utils/workerClient';
 import { Plus, X, Copy, Check, Filter } from 'lucide-react';
 import { Archive } from 'libarchive.js';
 import { ThemeToggle } from "./theme-toggle";
@@ -167,21 +168,10 @@ const LogAnalyzer = () => {
                 });
               } else {
                 const text = await blob.text();
-                const lines = text.split('\n');
-                const parsedLogs = lines
-                  .map((line, index) => {
-                    const log = parseLogLine(line);
-                    if (!log) {
-                      console.warn(`Failed to parse line ${index} in ${fullName}:`, line);
-                    }
-                    return log;
-                  })
-                  .filter((log): log is LogEntryType => log !== null);
-
                 newFiles.push({
                   id: crypto.randomUUID(),
                   name: fullName,
-                  logs: parsedLogs,
+                  logs: await parseLinesAsync(text),
                   source: 'desktop',
                   uploadedAs: file.name,
                 });
@@ -198,16 +188,7 @@ const LogAnalyzer = () => {
           if (logSourceType === 'har' || fileExtension === 'har') {
             parsedLogs = parseHarContent(text);
           } else {
-            const lines = text.split('\n');
-            parsedLogs = lines
-              .map((line, index) => {
-                const log = parseLogLine(line);
-                if (!log) {
-                  console.warn(`Failed to parse line ${index} in ${file.name}:`, line);
-                }
-                return log;
-              })
-              .filter((log): log is LogEntryType => log !== null);
+            parsedLogs = await parseLinesAsync(text);
           }
 
           newFiles.push({
@@ -293,9 +274,11 @@ const LogAnalyzer = () => {
     );
   };
 
-  // Filter and sort the logs based on the active tab's state
-  const filteredAndSortedLogs = currentLogs
-    .filter((log) => {
+  // Filter and sort the logs based on the active tab's state.
+  // Memoized so typing in the search box doesn't re-filter the full log array
+  // on every render (the input change triggers a top-level setState).
+  const filteredAndSortedLogs = useMemo(() => {
+    return currentLogs.filter((log) => {
       // Handle both single filter and multiple filter combinations (use view-specific filter)
       const filter = activeFilter;
       let levelMatch = true;
@@ -350,9 +333,31 @@ const LogAnalyzer = () => {
       const sortMultiplier = activeTab?.sortDirection === 'asc' ? 1 : -1;
       return (a.timestamp - b.timestamp) * sortMultiplier;
     });
+  }, [currentLogs, activeFilter, logSourceType, activeTab?.searchTerms, activeTab?.dateRange, activeTab?.sortDirection]);
 
-  // Calculate statistics for the logs
-  const stats = calculateLogStats(currentLogs, filteredAndSortedLogs);
+  // Memoized stats so they don't recompute on unrelated re-renders
+  const stats = useMemo(
+    () => calculateLogStats(currentLogs, filteredAndSortedLogs),
+    [currentLogs, filteredAndSortedLogs],
+  );
+
+  // Patterns are computed in a Web Worker so large pattern runs don't block the
+  // main thread. The effect cancels stale results when the inputs change before
+  // the worker replies.
+  const [patterns, setPatterns] = useState<PatternGroup[]>([]);
+  useEffect(() => {
+    if (activeTab?.viewMode !== 'patterns') {
+      setPatterns([]);
+      return;
+    }
+    let cancelled = false;
+    findPatternsAsync(filteredAndSortedLogs).then((p) => {
+      if (!cancelled) setPatterns(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab?.viewMode, filteredAndSortedLogs]);
 
   // HAR view: bucket counts by status (1xx, 2xx, …) for the stats summary
   const harBuckets: HarBucketCounts | undefined = React.useMemo(() => {
@@ -802,7 +807,7 @@ const LogAnalyzer = () => {
                       </div>
                     )
                   ) : (
-                    <PatternView patterns={findPatterns(filteredAndSortedLogs)} />
+                    <PatternView patterns={patterns} />
                   )}
 
                   {/* Pagination Controls */}
