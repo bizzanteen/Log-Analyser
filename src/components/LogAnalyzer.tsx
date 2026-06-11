@@ -11,9 +11,23 @@ import { PatternView } from './logs/PatternView';
 import { HarTimelineView } from './logs/HarTimelineView';
 import { findPatterns } from '../utils/patternMatcher';
 import { Plus, X, Copy, Check, Filter } from 'lucide-react';
-import JSZip from 'jszip';
+import { Archive } from 'libarchive.js';
 import { ThemeToggle } from "./theme-toggle";
 import { Modal } from '@/components/ui/modal';
+
+const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz']);
+
+let archiveInitialized = false;
+function ensureArchiveInit() {
+  if (archiveInitialized) return;
+  Archive.init({ workerUrl: '/libarchive/worker-bundle.js' });
+  archiveInitialized = true;
+}
+
+type LibarchiveEntry = {
+  file: { name: string; extract: () => Promise<File | null> };
+  path: string;
+};
 
 interface Tab {
   id: string;
@@ -128,55 +142,57 @@ const LogAnalyzer = () => {
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
         const fileExtension = file.name.split('.').pop()?.toLowerCase();
+        const isArchive = !!fileExtension && ARCHIVE_EXTENSIONS.has(fileExtension);
 
-        const isZip = fileExtension === 'zip';
+        if (isArchive) {
+          ensureArchiveInit();
+          const archive = await Archive.open(file);
+          try {
+            const entries = (await archive.getFilesArray()) as LibarchiveEntry[];
+            for (const entry of entries) {
+              const blob = await entry.file.extract();
+              if (!blob) continue;
+              const fullName = `${entry.path}${entry.file.name}`;
+              const lowerName = fullName.toLowerCase();
 
-        if (logSourceType === 'har' && isZip) {
-          // HAR view: .zip archive containing .har files
-          const zip = new JSZip();
-          const zipContents = await zip.loadAsync(file);
-          for (const filename in zipContents.files) {
-            const entry = zipContents.files[filename];
-            if (entry.dir || !filename.toLowerCase().endsWith('.har')) continue;
-            const fileData = await entry.async('string');
-            const parsedLogs = parseHarContent(fileData);
-            newFiles.push({
-              id: crypto.randomUUID(),
-              name: filename,
-              logs: parsedLogs,
-              source: 'har',
-              uploadedAs: file.name,
-            });
-          }
-        } else if (logSourceType === 'desktop' && isZip) {
-          // Desktop view: .zip archive of log files
-          const zip = new JSZip();
-          const zipContents = await zip.loadAsync(file);
-          for (const filename in zipContents.files) {
-            const fileData = await zipContents.files[filename].async('string');
-            const lines = fileData.split('\n');
-            const parsedLogs = lines
-              .map((line, index) => {
-                const log = parseLogLine(line);
-                if (!log) {
-                  console.warn(`Failed to parse line ${index} in ${filename}:`, line);
-                }
-                return log;
-              })
-              .filter((log): log is LogEntryType => log !== null);
+              if (logSourceType === 'har') {
+                if (!lowerName.endsWith('.har')) continue;
+                const text = await blob.text();
+                newFiles.push({
+                  id: crypto.randomUUID(),
+                  name: fullName,
+                  logs: parseHarContent(text),
+                  source: 'har',
+                  uploadedAs: file.name,
+                });
+              } else {
+                const text = await blob.text();
+                const lines = text.split('\n');
+                const parsedLogs = lines
+                  .map((line, index) => {
+                    const log = parseLogLine(line);
+                    if (!log) {
+                      console.warn(`Failed to parse line ${index} in ${fullName}:`, line);
+                    }
+                    return log;
+                  })
+                  .filter((log): log is LogEntryType => log !== null);
 
-            newFiles.push({
-              id: crypto.randomUUID(),
-              name: filename,
-              logs: parsedLogs,
-              source: 'desktop',
-              uploadedAs: file.name,
-            });
+                newFiles.push({
+                  id: crypto.randomUUID(),
+                  name: fullName,
+                  logs: parsedLogs,
+                  source: 'desktop',
+                  uploadedAs: file.name,
+                });
+              }
+            }
+          } finally {
+            await archive.close();
           }
         } else {
-          // Single file (or non-zip archive)
+          // Single uncompressed file
           const text = await file.text();
-
           let parsedLogs: LogEntryType[] = [];
 
           if (logSourceType === 'har' || fileExtension === 'har') {
@@ -564,7 +580,7 @@ const LogAnalyzer = () => {
                           type="file"
                           onChange={handleFileUpload}
                           multiple
-                          accept=".har,.zip"
+                          accept=".har,.zip,.rar,.7z,.tar,.gz,.tgz,.bz2,.xz"
                           className="sr-only"
                           aria-label="Choose HAR or archive files"
                         />
@@ -575,7 +591,7 @@ const LogAnalyzer = () => {
                           type="file"
                           onChange={handleFileUpload}
                           multiple
-                          accept=".log,.zip,.rar,.tar,.gz,.7z,.tar.gz"
+                          accept=".log,.zip,.rar,.7z,.tar,.gz,.tgz,.bz2,.xz"
                           className="sr-only"
                           aria-label="Choose log files"
                         />
