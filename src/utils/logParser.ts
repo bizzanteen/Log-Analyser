@@ -101,33 +101,59 @@ export const parseHarContent = (content: string): LogEntry[] => {
   }
 };
 
+// Anchored regex: [pid][timestamp][context][level][message].
+// The message field uses greedy `.*` so embedded `]` inside the message is preserved
+// instead of being truncated at the first internal `]` like the previous non-greedy parser.
+const LINE_REGEX = /^\[([^\]]+)\]\[([^\]]+)\]\[([^\]]+)\]\[([^\]]+)\]\[(.*)\]\s*$/;
+
+const LEVEL_MAP: Record<string, LogEntry['level']> = {
+  info: 'info',
+  warn: 'warn',
+  warning: 'warn',
+  error: 'error',
+  err: 'error',
+  fatal: 'error',
+  debug: 'info',
+  verbose: 'info',
+  trace: 'info',
+  silly: 'info',
+};
+
+const stripQuotes = (s: string): string =>
+  s.length >= 2 && s[0] === '"' && s[s.length - 1] === '"' ? s.slice(1, -1) : s;
+
 export const parseLogLine = (line: string): LogEntry | null => {
   if (!line.trim()) return null;
 
-  const parts = line.match(/\[(.*?)\]/g);
-  if (!parts || parts.length !== 5) return null;
+  const match = LINE_REGEX.exec(line);
+  if (!match) return null;
 
-  const [pid, timestamp, context, level, message] = parts.map(p => 
-    p.slice(1, -1).replace(/^"|"$/g, '')
-  );
+  const [, pid, timestampStr, context, levelStr, message] = match;
+
+  const timestamp = Number(timestampStr);
+  if (!Number.isFinite(timestamp)) return null;
+
+  const level = LEVEL_MAP[levelStr.toLowerCase()] ?? 'info';
 
   return {
-    pid,
-    timestamp: parseInt(timestamp),
-    context,
-    level: level.toLowerCase() as LogEntry['level'],
-    message
+    pid: stripQuotes(pid),
+    timestamp,
+    context: stripQuotes(context),
+    level,
+    message: stripQuotes(message),
   };
 };
 
 export const calculateLogStats = (allLogs: LogEntry[], filteredLogs: LogEntry[]): LogStats => {
-  return {
-    info: allLogs.filter(log => log.level === 'info').length,
-    warn: allLogs.filter(log => log.level === 'warn').length,
-    error: allLogs.filter(log => log.level === 'error').length,
-    total: allLogs.length,
-    filtered: filteredLogs.length
-  };
+  let info = 0;
+  let warn = 0;
+  let error = 0;
+  for (const log of allLogs) {
+    if (log.level === 'info') info++;
+    else if (log.level === 'warn') warn++;
+    else if (log.level === 'error') error++;
+  }
+  return { info, warn, error, total: allLogs.length, filtered: filteredLogs.length };
 };
 
 const UUID_REGEX = /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g;
