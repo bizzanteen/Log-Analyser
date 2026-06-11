@@ -18,11 +18,6 @@ interface LogFiltersProps {
   showScopeToggle?: boolean;
   showDateFilter?: boolean;
   isHarView?: boolean;
-  conversationData?: string | string[];
-  onApplyAISearch?: () => void;
-  aiSearchTerms?: string[]; // Track which terms came from AI
-  isAISearchActive?: boolean; // Track if AI search is currently active
-  aiSearchState?: 'disabled' | 'loading' | 'ready'; // Track AI search button state
   onClearAllSearchTerms?: () => void; // Function to clear all search terms
   onExtractWorkspaceIds?: () => void; // Desktop only: open modal to show extracted workspace IDs
 }
@@ -40,11 +35,6 @@ export const LogFilters = ({
   setSortDirection,
   dateRange,
   setDateRange,
-  conversationData,
-  onApplyAISearch,
-  aiSearchTerms = [],
-  isAISearchActive = false,
-  aiSearchState = 'disabled',
   onClearAllSearchTerms,
   onExtractWorkspaceIds,
   showScopeToggle = true,
@@ -170,31 +160,20 @@ export const LogFilters = ({
         <Search className="w-4 h-4 text-gray-500" />
         <div className="flex-1 flex items-start gap-2 p-2 border rounded bg-white dark:bg-gray-900 min-h-[48px] flex-wrap">
           {/* Search Tags */}
-          {searchTerms.map((term, index) => {
-            const isAITerm = aiSearchTerms.includes(term);
-            return (
-              <span
-                key={index}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm ${
-                  isAITerm 
-                    ? 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200'
-                    : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'
-                }`}
+          {searchTerms.map((term, index) => (
+            <span
+              key={index}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200"
+            >
+              {term}
+              <button
+                onClick={() => removeSearchTerm(index)}
+                className="rounded-full p-0.5 hover:bg-blue-200 dark:hover:bg-blue-800"
               >
-                {term}
-                <button
-                  onClick={() => removeSearchTerm(index)}
-                  className={`rounded-full p-0.5 ${
-                    isAITerm
-                      ? 'hover:bg-purple-200 dark:hover:bg-purple-800'
-                      : 'hover:bg-blue-200 dark:hover:bg-blue-800'
-                  }`}
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
-            );
-          })}
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          ))}
           {/* Search Input */}
           <input
             type="text"

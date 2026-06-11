@@ -14,7 +14,6 @@ import { Plus, X, Copy, Check, Filter } from 'lucide-react';
 import JSZip from 'jszip';
 import { ThemeToggle } from "./theme-toggle";
 import { Modal } from '@/components/ui/modal';
-import axios from 'axios';
 
 interface Tab {
   id: string;
@@ -29,10 +28,6 @@ interface Tab {
   dateRange: { start: string; end: string }; // Date filter range
   sortDirection: 'asc' | 'desc';
   viewMode: 'logs' | 'patterns';
-  response?: string | string[]; // Added optional property for storing response
-  aiSearchTerms?: string[]; // Track which terms came from AI
-  isAISearchActive?: boolean; // Track if AI search is currently active
-  aiSearchState?: 'disabled' | 'loading' | 'ready'; // Track AI search button state
 }
 
 const LogAnalyzer = () => {
@@ -50,9 +45,6 @@ const LogAnalyzer = () => {
     dateRange: { start: '', end: '' }, // Initialize date range
     sortDirection: 'desc',
     viewMode: 'logs',
-    aiSearchTerms: [], // Initialize AI search terms
-    isAISearchActive: false, // Initialize AI search state
-    aiSearchState: 'disabled', // Initialize as disabled
   }]); // Ensure at least one tab is always initialized
 
   const [activeTabId, setActiveTabId] = useState<string | null>(tabs.length > 0 ? tabs[0].id : null); // Safeguard against empty tabs array
@@ -85,9 +77,6 @@ const LogAnalyzer = () => {
       dateRange: { start: '', end: '' }, // Initialize date range
       sortDirection: 'desc',
       viewMode: 'logs',
-      aiSearchTerms: [], // Initialize AI search terms
-      isAISearchActive: false, // Initialize AI search state
-      aiSearchState: 'disabled', // Initialize as disabled
     };
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id); // Set the new tab as active
@@ -108,142 +97,22 @@ const LogAnalyzer = () => {
   };
 
   // Save the renamed tab
-  const saveRenamedTab = async () => {
-    if (editingTabId) {
-      const currentEditingTabId = editingTabId;
-      if (tempTabName.trim() === '') {
-        // Restore the original name if no changes were made
-        const originalName = tabs.find((tab) => tab.id === currentEditingTabId)?.name || '';
-        setTabs((prev) =>
-          prev.map((tab) => (tab.id === currentEditingTabId ? { ...tab, name: originalName } : tab))
-        );
-        setEditingTabId(null);
-        setTempTabName('');
-        return;
-      }
-      // Always update the tab name and clear previous response
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === currentEditingTabId
-            ? { 
-                ...tab, 
-                name: tempTabName, 
-                response: undefined,
-                aiSearchTerms: [],
-                isAISearchActive: false,
-                aiSearchState: tempTabName.trim() ? 'loading' : 'disabled' // Set to loading if ticket number provided
-              }
-            : tab
-        )
-      );
+  const saveRenamedTab = () => {
+    if (!editingTabId) return;
+    const currentEditingTabId = editingTabId;
+    if (tempTabName.trim() === '') {
+      // No change — leave the existing name in place
       setEditingTabId(null);
       setTempTabName('');
-      
-      // Only run API request if we have a ticket number
-      if (tempTabName.trim() === '') {
-        return;
-      }
-      
-      // Run the HTTP request for the new ticket number
-      try {
-        console.log('Making API request for ticket:', tempTabName);
-        const response = await axios.get(
-          `https://rabid-force-polish.flows.pstmn.io/api/default/get-summary?ticket_id=${tempTabName}`,
-          {
-            headers: {
-              Authorization:
-                'Basic ***REDACTED***',
-            },
-          }
-        );
-        console.log('API response received:', response.data);
-        console.log('Response type:', typeof response.data);
-        console.log('Is array:', Array.isArray(response.data));
-        console.log('Response length:', response.data?.length);
-        console.log('Response truthy:', !!response.data);
-        console.log('Response as JSON:', JSON.stringify(response.data));
-        console.log('Full response object:', response);
-        
-        // Handle different response formats
-        let conversationData = null;
-        
-        if (response.data) {
-          if (typeof response.data === 'string' && response.data.trim().length > 0) {
-            conversationData = response.data.trim();
-            console.log('Valid string response found:', conversationData);
-          } else if (Array.isArray(response.data) && response.data.length > 0) {
-            conversationData = response.data;
-            console.log('Valid array response found:', conversationData);
-          } else {
-            console.log('Invalid response - empty string or array');
-          }
-        } else {
-          console.log('No response.data found');
-        }
-        
-        if (conversationData) {
-          console.log('Valid response format found - storing conversation data and auto-applying AI search');
-          
-          // Parse AI terms from the response
-          let aiTerms: string[] = [];
-          if (typeof conversationData === 'string') {
-            aiTerms = conversationData
-              .split(',')
-              .map(term => term.trim())
-              .filter(term => term.length > 0);
-          } else if (Array.isArray(conversationData)) {
-            aiTerms = conversationData
-              .map(term => String(term).trim())
-              .filter(term => term.length > 0);
-          }
-          
-          // Get current tab to preserve existing search terms
-          const currentTab = tabs.find(tab => tab.id === currentEditingTabId);
-          const existingUserTerms = currentTab?.searchTerms || [];
-          
-          // Merge existing user terms with new AI terms (avoid duplicates)
-          const mergedTerms = [...existingUserTerms];
-          aiTerms.forEach(term => {
-            if (!mergedTerms.includes(term)) {
-              mergedTerms.push(term);
-            }
-          });
-          
-          setTabs((prevTabs) =>
-            prevTabs.map((tab) =>
-              tab.id === currentEditingTabId
-                ? { 
-                    ...tab, 
-                    response: conversationData, 
-                    aiSearchState: 'ready',
-                    searchTerms: mergedTerms, // Preserve existing + add AI terms
-                    aiSearchTerms: aiTerms,
-                    isAISearchActive: true
-                  }
-                : tab
-            )
-          );
-        } else {
-          console.log('Invalid response format - setting disabled state');
-          setTabs((prevTabs) =>
-            prevTabs.map((tab) =>
-              tab.id === currentEditingTabId
-                ? { ...tab, response: undefined, aiSearchState: 'disabled' }
-                : tab
-            )
-          );
-        }
-      } catch (error) {
-        console.error('API request failed:', error);
-        setTabs((prevTabs) =>
-          prevTabs.map((tab) =>
-            tab.id === currentEditingTabId
-              ? { ...tab, response: undefined, aiSearchState: 'disabled' }
-              : tab
-          )
-        );
-      }
+      return;
     }
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.id === currentEditingTabId ? { ...tab, name: tempTabName } : tab
+      )
+    );
+    setEditingTabId(null);
+    setTempTabName('');
   };
 
   // Handle file uploads for the active tab
@@ -637,89 +506,12 @@ const LogAnalyzer = () => {
     );
   };
 
-  // Apply AI-Enhanced Search terms from conversation data
-  const handleApplyAISearch = () => {
-    const activeTab = tabs.find((tab) => tab.id === activeTabId);
-    if (!activeTab || !activeTab.response || activeTab.aiSearchState !== 'ready') return;
-
-    if (activeTab.isAISearchActive) {
-      // Remove AI search terms - keep only user-added terms
-      const userTerms = activeTab.searchTerms.filter(term => 
-        !activeTab.aiSearchTerms?.includes(term)
-      );
-      
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTabId
-            ? { 
-                ...tab, 
-                searchTerms: userTerms, 
-                searchTerm: '', 
-                aiSearchTerms: [],
-                isAISearchActive: false 
-              }
-            : tab
-        )
-      );
-    } else {
-      // Add AI search terms
-      let aiTerms: string[] = [];
-      
-      if (typeof activeTab.response === 'string') {
-        // Split comma-separated terms and clean them up
-        aiTerms = activeTab.response
-          .split(',')
-          .map(term => term.trim())
-          .filter(term => term.length > 0);
-      } else if (Array.isArray(activeTab.response)) {
-        // Handle array responses
-        aiTerms = activeTab.response
-          .map(term => String(term).trim())
-          .filter(term => term.length > 0);
-      }
-
-      // Combine existing user terms with AI terms (avoid duplicates)
-      const existingTerms = activeTab.searchTerms || [];
-      const userTerms = existingTerms.filter(term => 
-        !activeTab.aiSearchTerms?.includes(term)
-      );
-      const newTerms = [...userTerms];
-      
-      aiTerms.forEach(term => {
-        if (!newTerms.includes(term)) {
-          newTerms.push(term);
-        }
-      });
-
-      // Apply the search terms to the current tab
-      setTabs((prev) =>
-        prev.map((tab) =>
-          tab.id === activeTabId
-            ? { 
-                ...tab, 
-                searchTerms: newTerms, 
-                searchTerm: '', 
-                aiSearchTerms: aiTerms,
-                isAISearchActive: true 
-              }
-            : tab
-        )
-      );
-    }
-  };
-
-  // Clear all search terms (both user and AI)
+  // Clear all search terms
   const handleClearAllSearchTerms = () => {
     setTabs((prev) =>
       prev.map((tab) =>
         tab.id === activeTabId
-          ? { 
-              ...tab, 
-              searchTerms: [], 
-              searchTerm: '',
-              aiSearchTerms: [],
-              isAISearchActive: false
-            }
+          ? { ...tab, searchTerms: [], searchTerm: '' }
           : tab
       )
     );
@@ -903,11 +695,6 @@ const LogAnalyzer = () => {
                         )
                       )
                     }
-                    conversationData={activeTab.response}
-                    onApplyAISearch={activeTab.aiSearchState === 'ready' ? handleApplyAISearch : undefined}
-                    aiSearchTerms={activeTab.aiSearchTerms || []}
-                    isAISearchActive={activeTab.isAISearchActive || false}
-                    aiSearchState={activeTab.aiSearchState || 'disabled'}
                     onClearAllSearchTerms={handleClearAllSearchTerms}
                     onExtractWorkspaceIds={logSourceType === 'desktop' ? handleExtractWorkspaceIds : undefined}
                     showScopeToggle={logSourceType === 'desktop'}
@@ -971,52 +758,28 @@ const LogAnalyzer = () => {
                               <div className="ring-2 ring-blue-500 rounded-lg">
                                 <LogEntry
                                   log={filteredAndSortedLogs[selectedHarIndex]}
-                                  conversation={
-                                    typeof activeTab.response === 'string'
-                                      ? activeTab.response
-                                      : Array.isArray(activeTab.response)
-                                        ? activeTab.response.join('\n')
-                                        : ''
-                                  }
                                   showFileName={activeTab.searchScope === 'all'}
                                 />
                               </div>
                             </>
                           ) : (
-                            paginatedLogs.map((log, index) => {
-                              const globalIndex = (currentPage - 1) * logsPerPage + index;
-                              return (
-                                <div key={index}>
-                                  <LogEntry
-                                    log={log}
-                                    conversation={
-                                      typeof activeTab.response === 'string'
-                                        ? activeTab.response
-                                        : Array.isArray(activeTab.response)
-                                          ? activeTab.response.join('\n')
-                                          : ''
-                                    }
-                                    showFileName={activeTab.searchScope === 'all'}
-                                  />
-                                </div>
-                              );
-                            })
+                            paginatedLogs.map((log, index) => (
+                              <div key={index}>
+                                <LogEntry
+                                  log={log}
+                                  showFileName={activeTab.searchScope === 'all'}
+                                />
+                              </div>
+                            ))
                           )}
                         </div>
                       </>
                     ) : (
                       <div className="space-y-2">
                         {paginatedLogs.map((log, index) => (
-                          <LogEntry 
-                            key={index} 
-                            log={log} 
-                            conversation={
-                              typeof activeTab.response === 'string' 
-                                ? activeTab.response 
-                                : Array.isArray(activeTab.response) 
-                                  ? activeTab.response.join('\n') 
-                                  : ''
-                            }
+                          <LogEntry
+                            key={index}
+                            log={log}
                             showFileName={activeTab.searchScope === 'all'}
                           />
                         ))}

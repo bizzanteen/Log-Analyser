@@ -65,7 +65,7 @@ export const PatternView = ({ patterns }: PatternViewProps) => {
             {expandedPatterns.has(group.pattern) && (
               <div className="border-t p-4 space-y-2">
                 {group.logs.map((log, index) => (
-                  <LogEntry key={index} log={log} conversation={undefined} />
+                  <LogEntry key={index} log={log} />
                 ))}
               </div>
             )}

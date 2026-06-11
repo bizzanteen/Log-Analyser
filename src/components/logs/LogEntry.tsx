@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import * as lucideReact from 'lucide-react';
 import * as logParser from '@/utils/logParser';
 import { tooltipMappings } from '@/utils/tooltipMappings';
-import axios from 'axios';
 
 interface LogEntryProps {
   log: logParser.LogEntry & { fileName?: string };
-  conversation: string | undefined;
   showFileName?: boolean;
 }
 
-export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryProps) => {
-  const [bubble, setBubble] = useState<{ content: string } | null>(null);
-  const [loading, setLoading] = useState(false);
+export const LogEntry = ({ log, showFileName = false }: LogEntryProps) => {
   const [copied, setCopied] = useState(false);
 
   const getIcon = () => {
@@ -24,7 +20,7 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
         return <lucideReact.AlertCircle className="w-4 h-4 text-red-500" />;
       }
       if (statusCode >= 400) {
-        return <lucideReact.AlertCircle className="w-4 h-4 text-orange-500 cursor-pointer z-[100000]" onClick={handleIconClick} />;
+        return <lucideReact.AlertCircle className="w-4 h-4 text-orange-500" />;
       }
       if (statusCode >= 300) {
         return <lucideReact.AlertTriangle className="w-4 h-4 text-amber-500" />;
@@ -39,7 +35,7 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
 
     switch (log.level) {
       case 'error':
-        return <lucideReact.AlertCircle className="w-4 h-4 text-red-500 cursor-pointer z-[100000]" onClick={handleIconClick} />;
+        return <lucideReact.AlertCircle className="w-4 h-4 text-red-500" />;
       case 'warn':
         return <lucideReact.AlertTriangle className="w-4 h-4 text-yellow-500" />;
       default:
@@ -76,24 +72,6 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
         return 'bg-yellow-50 dark:bg-yellow-900';
       default:
         return 'bg-gray-50 dark:bg-gray-800';
-    }
-  };
-
-  const handleIconClick = async (event: React.MouseEvent) => {
-    if (!conversation) return;
-    setLoading(true);
-    setBubble(null);
-
-    try {
-      const res = await axios.post('https://rabid-force-polish.flows.pstmn.io/api/default/query-log', {
-        conversation,
-        log: log.message,
-      });
-      setBubble({ content: res.data });
-    } catch (e) {
-      setBubble({ content: 'Error occurred while fetching explanation' });
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -157,24 +135,6 @@ export const LogEntry = ({ log, conversation, showFileName = false }: LogEntryPr
           )}
         </button>
         
-        {loading && (
-          <div className="ml-2 text-xs text-gray-400">Loading...</div>
-        )}
-        {bubble && log.level === 'error' && (
-          <div
-            className="fixed top-0 left-0 w-screen h-screen flex items-center justify-center z-[100000] pointer-events-auto"
-            onClick={() => setBubble(null)}
-            style={{ background: 'rgba(0,0,0,0.01)' }}
-          >
-            <div
-              className="relative pointer-events-auto bg-card text-card-foreground rounded-xl px-4 py-3 shadow-lg z-[100000] backdrop-blur-md bg-opacity-80"
-              style={{ width: 'fit-content', maxWidth: '90%' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {bubble.content}
-            </div>
-          </div>
-        )}
       </div>
       <div className="mt-2 text-xs text-gray-500 dark:text-gray-300 flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-2">
