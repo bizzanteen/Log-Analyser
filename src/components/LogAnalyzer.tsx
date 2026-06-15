@@ -11,6 +11,7 @@ import { PatternView } from './logs/PatternView';
 import { HarTimelineView } from './logs/HarTimelineView';
 import type { PatternGroup } from '../utils/patternMatcher';
 import { parseLinesAsync, findPatternsAsync } from '../utils/workerClient';
+import { buildTicketReply } from '../utils/ticketReply';
 import { X, Copy, Check, Filter } from 'lucide-react';
 import { Archive } from 'libarchive.js';
 import { ThemeToggle } from "./theme-toggle";
@@ -74,6 +75,12 @@ const LogAnalyzer = () => {
   const [extractedIdsErrorsOnly, setExtractedIdsErrorsOnly] = useState<ExtractedIds | null>(null);
   const [extractIdsErrorsOnlyFilter, setExtractIdsErrorsOnlyFilter] = useState(false);
   const [extractIdsCopyWorkspace, setExtractIdsCopyWorkspace] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportPatterns, setExportPatterns] = useState<PatternGroup[]>([]);
+  const [exportWorkspaceIds, setExportWorkspaceIds] = useState<string[]>([]);
+  const [includeFilteredLogsInExport, setIncludeFilteredLogsInExport] = useState(false);
+  const [exportCopied, setExportCopied] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
 
   // Handle file uploads for the active tab
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -447,6 +454,82 @@ const LogAnalyzer = () => {
     }
   };
 
+  // Open the export modal: compute patterns + workspace IDs once, then render the
+  // markdown inline. The include-filtered-logs toggle inside the modal just
+  // rebuilds from cached inputs (no re-computation).
+  const openExport = async () => {
+    if (!activeTab) return;
+    setExportLoading(true);
+    setExportCopied(false);
+    setShowExportModal(true);
+    try {
+      const patternList = await findPatternsAsync(filteredAndSortedLogs);
+      setExportPatterns(patternList);
+      setExportWorkspaceIds(
+        logSourceType === 'desktop'
+          ? extractWorkspaceIds(filteredAndSortedLogs).workspaceIds
+          : [],
+      );
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const exportMarkdown = useMemo(() => {
+    if (!showExportModal || !activeTab) return '';
+    const selected = activeSourceFiles.find((f) => f.id === effectiveSelectedFileId);
+    return buildTicketReply({
+      sourceType: logSourceType,
+      files: activeSourceFiles,
+      stats,
+      filteredLogs: filteredAndSortedLogs,
+      patterns: exportPatterns,
+      workspaceIds: exportWorkspaceIds,
+      harBuckets,
+      filter: activeFilter,
+      searchTerms: activeTab.searchTerms,
+      searchScope: activeTab.searchScope,
+      selectedFileName: selected?.name ?? null,
+      dateRange: activeTab.dateRange,
+      includeFilteredLogs: includeFilteredLogsInExport,
+    });
+  }, [
+    showExportModal,
+    activeTab,
+    activeSourceFiles,
+    effectiveSelectedFileId,
+    logSourceType,
+    stats,
+    filteredAndSortedLogs,
+    exportPatterns,
+    exportWorkspaceIds,
+    harBuckets,
+    activeFilter,
+    includeFilteredLogsInExport,
+  ]);
+
+  const copyExportToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(exportMarkdown);
+      setExportCopied(true);
+      setTimeout(() => setExportCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy export:', err);
+    }
+  };
+
+  const downloadExport = () => {
+    const blob = new Blob([exportMarkdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const tabName = activeTab?.name ?? 'log-analysis';
+    const safeName = tabName.replace(/[^\w.-]+/g, '_');
+    a.download = `${safeName}-summary.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Clear all log files for the active tab (current view only: desktop or HAR)
   const clearAllFiles = () => {
     if (!activeTabId) return;
@@ -691,6 +774,17 @@ const LogAnalyzer = () => {
                             <Copy className="w-4 h-4" />
                           )}
                           Copy all filtered logs
+                        </button>
+                      )}
+                      {/* Export ticket reply: pre-formatted markdown summary suitable for pasting into a Jira/GitHub reply */}
+                      {filteredAndSortedLogs.length > 0 && (
+                        <button
+                          onClick={openExport}
+                          className="px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm"
+                          title="Build a markdown summary you can paste into a ticket reply"
+                        >
+                          <Copy className="w-4 h-4" />
+                          Export ticket reply
                         </button>
                       )}
                     </div>
@@ -953,6 +1047,76 @@ const LogAnalyzer = () => {
             </div>
               );
             })()}
+          </div>
+        </Modal>
+      )}
+
+      {/* Export ticket reply modal */}
+      {showExportModal && (
+        <Modal onClose={() => setShowExportModal(false)}>
+          <div className="flex flex-col gap-4 w-[min(70rem,90vw)]">
+            <div className="flex items-center justify-between gap-4 border-b border-gray-200 dark:border-gray-700 pb-2">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Export ticket reply</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400 italic mt-0.5">
+                  Markdown summary you can paste into a Jira / GitHub / Slack reply.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportModal(false)}
+                className="p-1.5 rounded text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shrink-0"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 dark:text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={includeFilteredLogsInExport}
+                  onChange={(e) => setIncludeFilteredLogsInExport(e.target.checked)}
+                  className="rounded border-gray-300 dark:border-gray-600"
+                />
+                Include filtered log entries
+                {includeFilteredLogsInExport && filteredAndSortedLogs.length > 50 && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    (capped at 50 of {filteredAndSortedLogs.length})
+                  </span>
+                )}
+              </label>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={copyExportToClipboard}
+                  disabled={exportLoading}
+                  className="px-3 py-1.5 rounded bg-blue-500 hover:bg-blue-600 text-white text-sm flex items-center gap-2 disabled:opacity-50"
+                >
+                  {exportCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {exportCopied ? 'Copied' : 'Copy markdown'}
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadExport}
+                  disabled={exportLoading}
+                  className="px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-sm disabled:opacity-50"
+                >
+                  Download .md
+                </button>
+              </div>
+            </div>
+
+            {exportLoading ? (
+              <div className="p-6 text-sm text-gray-600 dark:text-gray-400">Computing patterns…</div>
+            ) : (
+              <textarea
+                readOnly
+                value={exportMarkdown}
+                className="w-full h-[60vh] p-3 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 text-xs font-mono text-gray-800 dark:text-gray-200 resize-none"
+              />
+            )}
           </div>
         </Modal>
       )}
