@@ -36,7 +36,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
               e.stopPropagation(); // Prevent triggering file selection
               removeFile(file.id); // Call the removeFile callback
             }}
-            className="flex items-center justify-center w-5 h-5 rounded-full border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+            className="flex items-center justify-center w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-300 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white transition-colors"
             title="Remove file"
             aria-label="Remove file"
           >
