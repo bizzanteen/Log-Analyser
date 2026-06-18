@@ -36,11 +36,13 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
               e.stopPropagation(); // Prevent triggering file selection
               removeFile(file.id); // Call the removeFile callback
             }}
-            className="text-red-500 hover:text-red-700"
+            className="flex items-center justify-center w-5 h-5 rounded-full border border-red-500 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+            title="Remove file"
+            aria-label="Remove file"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
+              className="h-3 w-3"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -48,7 +50,7 @@ export const FileSelector: React.FC<FileSelectorProps> = ({
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                strokeWidth={2}
+                strokeWidth={3}
                 d="M6 18L18 6M6 6l12 12"
               />
             </svg>
