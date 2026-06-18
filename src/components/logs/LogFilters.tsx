@@ -359,7 +359,7 @@ export const LogFilters = ({
             </button>
             <button
               onClick={() => handleFilterToggle('info')}
-              className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-gray-500 text-white dark:bg-stone-600' : 'bg-gray-100 dark:bg-stone-700 text-gray-700 dark:text-stone-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}
+              className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-sky-500 text-white dark:bg-sky-600' : 'bg-gray-100 dark:bg-stone-700 text-sky-700 dark:text-sky-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}
             >
               <Info className="w-4 h-4" /> Info
             </button>
@@ -429,7 +429,7 @@ export const LogFilters = ({
             <button onClick={() => handleFilterToggle('all')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('all') ? 'bg-green-500 text-white dark:bg-green-700' : 'bg-gray-100 dark:bg-stone-700 text-green-700 dark:text-green-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><Globe className="w-4 h-4" /> All</button>
             <button onClick={() => handleFilterToggle('error')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('error') ? 'bg-red-500 text-white dark:bg-red-700' : 'bg-gray-100 dark:bg-stone-700 text-red-700 dark:text-red-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><AlertCircle className="w-4 h-4" /> Errors</button>
             <button onClick={() => handleFilterToggle('warn')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('warn') ? 'bg-yellow-500 text-white dark:bg-yellow-700' : 'bg-gray-100 dark:bg-stone-700 text-yellow-700 dark:text-yellow-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><AlertTriangle className="w-4 h-4" /> Warnings</button>
-            <button onClick={() => handleFilterToggle('info')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-gray-500 text-white dark:bg-stone-600' : 'bg-gray-100 dark:bg-stone-700 text-gray-700 dark:text-stone-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><Info className="w-4 h-4" /> Info</button>
+            <button onClick={() => handleFilterToggle('info')} className={`px-4 py-2 rounded flex items-center gap-2 ${isFilterActive('info') ? 'bg-sky-500 text-white dark:bg-sky-600' : 'bg-gray-100 dark:bg-stone-700 text-sky-700 dark:text-sky-300 hover:bg-gray-200 dark:hover:bg-stone-600'}`}><Info className="w-4 h-4" /> Info</button>
           </>
         )}
       </div>

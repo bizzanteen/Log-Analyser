@@ -39,7 +39,7 @@ export const LogEntry = ({ log, showFileName = false }: LogEntryProps) => {
       case 'warn':
         return <lucideReact.AlertTriangle className="w-4 h-4 text-yellow-500" />;
       default:
-        return <lucideReact.Info className="w-4 h-4 text-gray-500" />;
+        return <lucideReact.Info className="w-4 h-4 text-sky-400" />;
     }
   };
 
