@@ -81,10 +81,21 @@ export const parseHarContent = (content: string): LogEntry[] => {
           : '';
 
       const safeStarted = Number.isFinite(started) ? started : Date.now();
+
+      // Use just the host as context. The full URL is already rendered in the
+      // message; putting it again in the metadata row was duplicating a long
+      // string and forcing the metadata to wrap onto extra lines.
+      let host = url;
+      try {
+        host = new URL(url).host || url;
+      } catch {
+        host = url;
+      }
+
       return {
         pid: status ? String(status) : '-',
         timestamp: safeStarted,
-        context: url,
+        context: host,
         level,
         message: `${method} ${url} - ${status} ${statusText} (${timeMs}ms${sizePart}${timingSummary})`,
         meta: {
